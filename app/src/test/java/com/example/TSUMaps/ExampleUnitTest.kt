@@ -1,4 +1,4 @@
-package com.example.tsumapsss
+package com.example.TSUMaps
 
 import org.junit.Test
 

@@ -1,15 +1,17 @@
-package com.example.tsumapsss
+package domain.Map
 
+import android.R
 import android.graphics.Matrix
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.Toast
+import domain.Map.MapGrid
+import com.example.tsumaps.domain.models.Point
 import com.github.chrisbanes.photoview.PhotoView
 
 data class MapMarker(
     val name: String,
-    val x: Float,
-    val y: Float,
+    val position: Point,
     val type: MarkerType
 )
 
@@ -41,7 +43,7 @@ class MapMarkerManager(
             layoutParams = FrameLayout.LayoutParams(size, size)
 
             setOnClickListener {
-                showInfo(marker.name)
+                Toast.makeText(markersContainer.context, marker.name, Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -50,6 +52,24 @@ class MapMarkerManager(
 
         markerView.post {
             updateMarkerPosition(markerView, marker)
+        }
+    }
+
+    fun addMarker(name: String, point: Point, type: MarkerType) {
+        addMarker(MapMarker(name, point, type))
+    }
+
+    fun addMarker(name: String, xPercent: Float, yPercent: Float, type: MarkerType) {
+        val pixelPoint = mapGrid.markerToPixel(xPercent, yPercent)
+        addMarker(MapMarker(name, pixelPoint, type))
+    }
+
+    fun removeMarker(name: String) {
+        val index = markers.indexOfFirst { it.name == name }
+        if (index != -1) {
+            markers.removeAt(index)
+            val view = markerViews.removeAt(index)
+            markersContainer.removeView(view)
         }
     }
 
@@ -64,15 +84,13 @@ class MapMarkerManager(
         val containerHeight = markersContainer.height
 
         if (containerWidth > 0 && containerHeight > 0) {
-            val mapPixelX = marker.x * mapGrid.getWidth()
-            val mapPixelY = marker.y * mapGrid.getHeight()
+            val mapPixelX = marker.position.x.toFloat()
+            val mapPixelY = marker.position.y.toFloat()
 
-            val matrix = Matrix()
-            photoView.getSuppMatrix(matrix)
             val values = FloatArray(9)
             photoView.imageMatrix.getValues(values)
 
-            val scale  = values[Matrix.MSCALE_X]
+            val scale = values[Matrix.MSCALE_X]
             val transX = values[Matrix.MTRANS_X]
             val transY = values[Matrix.MTRANS_Y]
 
@@ -84,28 +102,15 @@ class MapMarkerManager(
         }
     }
 
-    fun getMarkerPixelPosition(marker: MapMarker): Pair<Int, Int> {
-        return mapGrid.markerToPixel(marker.x, marker.y)
-    }
-
-    fun isMarkerOnWalkablePath(marker: MapMarker): Boolean {
-        val (pixelX, pixelY) = getMarkerPixelPosition(marker)
-        return mapGrid.isWalkable(pixelX, pixelY)
-    }
-
     private fun getMarkerIcon(type: MarkerType): Int {
         return when (type) {
-            MarkerType.BUILDING    -> android.R.drawable.ic_menu_edit
-            MarkerType.PARK        -> android.R.drawable.ic_menu_gallery
-            MarkerType.ROAD        -> android.R.drawable.ic_menu_directions
-            MarkerType.UNIVERSITY  -> android.R.drawable.ic_menu_info_details
-            MarkerType.VENDING     -> android.R.drawable.ic_menu_manage
-            MarkerType.SHOP        -> android.R.drawable.ic_menu_view
+            MarkerType.BUILDING    -> R.drawable.ic_menu_edit
+            MarkerType.PARK        -> R.drawable.ic_menu_gallery
+            MarkerType.ROAD        -> R.drawable.ic_menu_directions
+            MarkerType.UNIVERSITY  -> R.drawable.ic_menu_info_details
+            MarkerType.VENDING     -> R.drawable.ic_menu_manage
+            MarkerType.SHOP        -> R.drawable.ic_menu_view
         }
-    }
-
-    private fun showInfo(name: String) {
-        Toast.makeText(markersContainer.context, name, Toast.LENGTH_SHORT).show()
     }
 
     private fun dpToPx(dp: Int): Int {

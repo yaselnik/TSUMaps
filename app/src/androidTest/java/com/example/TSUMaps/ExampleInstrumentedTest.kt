@@ -1,4 +1,4 @@
-package com.example.tsumapsss
+package com.example.TSUMaps
 
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.ext.junit.runners.AndroidJUnit4
