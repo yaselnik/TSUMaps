@@ -1,7 +1,7 @@
 package com.example.tsumapsss
 
-import android.graphics.Matrix                  // ← Fix #3: для работы с матрицей
-import android.widget.FrameLayout              // ← Fix #1: для LayoutParams
+import android.graphics.Matrix
+import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.Toast
 import com.github.chrisbanes.photoview.PhotoView
