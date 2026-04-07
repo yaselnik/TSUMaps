@@ -5,6 +5,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.example.tsumaps.domain.algorithms.Astar
+import com.example.tsumaps.domain.algorithms.GenericAlgorithm
 import com.example.tsumaps.domain.map.MapGrid
 import com.example.tsumaps.domain.models.Point
 
