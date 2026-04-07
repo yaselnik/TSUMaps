@@ -8,7 +8,24 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
+interface Grid {
+    fun isWalkable(point: Point) : Boolean
+}
+
 class Astar (val grid: Grid) {
+    fun calculatePath(start: Point?, end: Point?) : Double {
+        val path = findPath(start, end)
+        var dist = 0.0
+        for (i in 0..path.size - 1) {
+            if (path[i].x * path[i + 1].x != 0 && path[i].y * path[i + 1].y  != 0) {
+                dist += sqrt(2.0);
+            }
+            else dist += 1.0
+        }
+
+        return dist
+    }
+
     fun findPath(start: Point?, end: Point?) : List<Point> {
         if (start == null || end == null) return emptyList()
         if (!grid.isWalkable(start) || !grid.isWalkable(end)) return emptyList()
@@ -40,7 +57,7 @@ class Astar (val grid: Grid) {
             if (currentPoint in visited) continue
 
             if (currentPoint == end) {
-                return  reconstructPath(nodes, currentPoint)
+                return reconstructPath(nodes, currentPoint)
             }
 
             visited.add(currentPoint)

@@ -1,0 +1,238 @@
+package com.example.tsumaps.domain.algorithms
+
+import androidx.compose.ui.graphics.evaluateCubic
+import com.example.tsumaps.domain.models.Place
+import com.example.tsumaps.domain.models.UserRequest
+import com.example.tsumaps.domain.models.Point
+import kotlin.random.Random
+
+class GenericAlgorithm (
+    private val startPoint: Point,
+    private val places: MutableMap<Int, Place>,
+    private val request: UserRequest,
+    private val populationSize: Int = 300,
+    private val generations: Int = 800,
+    private val tournamentSize: Int = 5,
+    private val mutationRate: Double = 0.2,
+    private val elitismCount: Int = 5
+    ) {
+
+    private val distanceMatrix = mutableMapOf<Pair<Int, Int>, Double>()
+    private val distanceFromStart = mutableMapOf<Int, Double> ()
+    private val placesToVisit = mutableMapOf<Int, Place>()
+
+
+    init {
+        for (key in places.keys) {
+            for (item in request.choice) {
+                if (places[key]!!.menu.contains(item)) {
+                    placesToVisit[key] = places[key] ?: continue
+                    break;
+                }
+            }
+        }
+
+        val astar = Astar()
+        for (place1 in placesToVisit.values) {
+            for (place2 in placesToVisit.values) {
+                if (place1 == place2) continue
+
+                val dist = astar.calculatePath(place1.location, place2.location)
+                distanceMatrix[Pair(place1.id, place2.id)] = dist
+                distanceMatrix[Pair(place2.id, place1.id)] = dist
+            }
+            distanceFromStart[place1.id] = astar.calculatePath(startPoint, place1.location)
+        }
+    }
+
+    fun fitness(route: List<Int>) : Double {
+        var dist = 0.001
+        dist += distanceFromStart[route[0]] ?: 0.0
+
+        for (i in 1 until route.size) {
+            dist += distanceMatrix[Pair(route[i - 1], route[i])] ?: 0.0
+        }
+
+        val covering = route.flatMap { placesToVisit[it]!!.menu }.toSet()
+
+        val missing = request.choice.filter { !covering.contains(it) }.toSet()
+
+        if (missing.isNotEmpty()) {
+            val penalty = missing.size * 1000.0
+            return 1.0 / (dist + penalty)
+        }
+        else {
+            return 1.0 / dist
+        }
+
+    }
+
+    fun initPopulation() : List<List<Int>> {
+        val population = mutableListOf<List<Int>>()
+
+        for (i in 0 until populationSize) {
+            val route = randomConstruction()
+            population.add(route)
+        }
+
+        return population
+    }
+
+    private fun randomConstruction(): List<Int> {
+        val route = placesToVisit.keys.shuffled().toMutableList()
+
+        var collectedItems = emptySet<String>()
+        var cutoffIndex = route.size
+
+        for ((index, id) in route.withIndex()) {
+            val city = placesToVisit[id] ?: continue
+            collectedItems = collectedItems + city.menu
+
+            if (collectedItems.containsAll(request.choice)) {
+                cutoffIndex = index + 1
+                break
+            }
+        }
+
+        return route.subList(0, cutoffIndex)
+    }
+
+    private fun tournamentSelect(population: List<List<Int>>, fitnesses: List<Double>): List<Int> {
+        val tournament = List(tournamentSize) {
+            val idx = Random.nextInt(population.size)
+            population[idx] to fitnesses[idx]
+        }
+
+        return tournament.maxByOrNull { it.second }?.first ?: population[0]
+    }
+
+    private fun orderCrossover(parent1: List<Int>, parent2: List<Int>): Pair<List<Int>, List<Int>> {
+        if (parent1.isEmpty() || parent2.isEmpty()) return parent1 to parent2
+
+        val size = parent1.size
+        val cutPoints = (0 until size).shuffled().take(2).sorted()
+        val (start, end) = cutPoints[0] to cutPoints[1]
+
+        val child1 = mutableListOf<Int>()
+        child1.addAll(parent1.subList(start, end + 1))
+
+        parent2.forEach {
+            if (it !in child1) child1.add(it)
+        }
+
+        val child2 = mutableListOf<Int>()
+        child2.addAll(parent2.subList(start, end + 1))
+
+        parent1.forEach {
+            if (it !in child2) child2.add(it)
+        }
+
+        return child1 to child2
+    }
+
+    private fun mutate(route: MutableList<Int>) {
+        if (Random.nextDouble() >= mutationRate) return
+
+        when (Random.nextInt(3)) {
+            0 -> inversionMutation(route)
+            1 -> swapMutation(route)
+            2 -> insertMutation(route)
+        }
+
+        trimRouteIfPossible(route)
+    }
+
+
+
+    private fun inversionMutation(route: MutableList<Int>) {
+        if (route.size < 2) return
+        val (i, j) = (0 until route.size).shuffled().take(2).sorted()
+        route.subList(i, j + 1).reverse()
+    }
+
+    private fun swapMutation(route: MutableList<Int>) {
+        if (route.size < 2) return
+        val (i, j) = (0 until route.size).shuffled().take(2)
+        val temp = route[i]
+        route[i] = route[j]
+        route[j] = temp
+    }
+
+    private fun insertMutation(route: MutableList<Int>) {
+        if (route.size < 2) return
+        val from = Random.nextInt(route.size)
+        val to = Random.nextInt(route.size)
+        val element = route.removeAt(from)
+        route.add(to, element)
+    }
+
+    private fun trimRouteIfPossible(route: MutableList<Int>) {
+        var collectedItems = emptySet<String>()
+        var cutoffIndex = route.size
+
+        for ((index, id) in route.withIndex()) {
+            val city = placesToVisit[id] ?: continue
+            collectedItems = collectedItems + city.menu
+
+            if (collectedItems.containsAll(request.choice)) {
+                cutoffIndex = index + 1
+                break
+            }
+        }
+
+        if (cutoffIndex < route.size) {
+            route.subList(cutoffIndex, route.size).clear()
+        }
+    }
+
+    fun evolve(): List<Int> {
+        if (placesToVisit.isEmpty()) {
+            return emptyList()
+        }
+        var population = initPopulation()
+        var bestRoute = listOf<Int>()
+        var bestFitness = 0.0
+
+        for (generation in 0 until generations) {
+            val fitnesses = population.map { fitness(it) }
+
+            val bestIndex = fitnesses.indices.maxByOrNull { fitnesses[it] } ?: 0
+            val currentBestRoute = population[bestIndex]
+            val currentBestFitness = fitnesses[bestIndex]
+
+            if (currentBestFitness > bestFitness) {
+                bestFitness = currentBestFitness
+                bestRoute = currentBestRoute
+            }
+
+            val newPopulation = mutableListOf<List<Int>>()
+
+            val eliteIndices = fitnesses.indices
+                .sortedByDescending { fitnesses[it] }
+                .take(elitismCount)
+
+            for (idx in eliteIndices) {
+                newPopulation.add(population[idx].toList())
+            }
+
+            while (newPopulation.size < populationSize) {
+                val parent1 = tournamentSelect(population, fitnesses)
+                val parent2 = tournamentSelect(population, fitnesses)
+
+                val (child1, child2) = orderCrossover(parent1, parent2)
+
+                val mutatedChild1 = child1.toMutableList().apply { mutate(this) }
+                val mutatedChild2 = child2.toMutableList().apply { mutate(this) }
+
+                newPopulation.add(mutatedChild1)
+                if (newPopulation.size < populationSize) {
+                    newPopulation.add(mutatedChild2)
+                }
+            }
+
+            population = newPopulation
+        }
+
+        return bestRoute
+    }
+}
