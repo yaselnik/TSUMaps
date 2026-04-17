@@ -10,6 +10,7 @@ import kotlin.math.pow
 import kotlin.math.sqrt
 import kotlin.random.Random
 
+
 class ClusteringAlgorithm(
     private val markers: List<MapMarker>,
     private val grid: MapGrid

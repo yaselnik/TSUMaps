@@ -6,6 +6,7 @@ data class ClusteringResult(
     val clusters: Map<Int, List<MapMarker>>
 )
 
+
 data class ClusteringComparisonResult(
     val euclideanResult: ClusteringResult,
     val aStarResult: ClusteringResult,
