@@ -1,56 +1,37 @@
 package com.example.tsumaps.domain.nn
 
-import android.content.Context
-import android.graphics.Bitmap
-import android.util.Log
-import org.tensorflow.lite.support.image.ImageProcessor
-import org.tensorflow.lite.support.image.TensorImage
-import org.tensorflow.lite.support.image.ops.ResizeOp
-import org.tensorflow.lite.task.core.BaseOptions
-import org.tensorflow.lite.task.vision.classifier.ImageClassifier
+import kotlin.math.exp
 
-class DigitClassifier(
-    private val context: Context,
-    private val modelName: String = "mnist_cnn.tflite",
-    private val scoreThreshold: Float = 0.5f,
+class SimpleNeuralNetwork(
+    private val inputNodes: Int,
+    private val hiddenNodes: Int,
+    private val outputNodes: Int,
+    private var weightsInputHidden: Array<DoubleArray>,
+    private var weightsHiddenOutput: Array<DoubleArray>
 ) {
-    private var classifier: ImageClassifier? = null
-
-    init {
-        setupClassifier()
+    private fun sigmoid(x: Double): Double {
+        return 1.0 / (1.0 + exp(-x))
     }
 
-    private fun setupClassifier() {
-        try {
-            val baseOptions = BaseOptions.builder().useNnapi().build()
-            val options = ImageClassifier.ImageClassifierOptions.builder()
-                .setBaseOptions(baseOptions)
-                .setMaxResults(1)
-                .setScoreThreshold(scoreThreshold)
-                .build()
-
-            classifier = ImageClassifier.createFromFileAndOptions(context, modelName, options)
-        } catch (e: Exception) {
-            Log.e("DigitClassifier", "Ошибка инициализации классификатора", e)
+    fun predict(inputArray: DoubleArray): DoubleArray {
+        val hiddenInputs = DoubleArray(hiddenNodes)
+        for (i in 0 until hiddenNodes) {
+            var sum = 0.0
+            for (j in 0 until inputNodes) {
+                sum += weightsInputHidden[i][j] * inputArray[j]
+            }
+            hiddenInputs[i] = sum
         }
-    }
+        val hiddenOutputs = hiddenInputs.map { sigmoid(it) }.toDoubleArray()
 
-    fun classify(bitmap: Bitmap): Pair<String, Float>? {
-        if (classifier == null) {
-            Log.e("DigitClassifier", "Классификатор не инициализирован.")
-            return null
+        val finalInputs = DoubleArray(outputNodes)
+        for (i in 0 until outputNodes) {
+            var sum = 0.0
+            for (j in 0 until hiddenNodes) {
+                sum += weightsHiddenOutput[i][j] * hiddenOutputs[j]
+            }
+            finalInputs[i] = sum
         }
-
-        val imageProcessor = ImageProcessor.Builder()
-            .add(ResizeOp(28, 28, ResizeOp.ResizeMethod.BILINEAR))
-            .build()
-
-        val tensorImage = imageProcessor.process(TensorImage.fromBitmap(bitmap))
-
-        val results = classifier?.classify(tensorImage)
-
-        return results?.firstOrNull()?.categories?.firstOrNull()?.let {
-            Pair(it.label, it.score)
-        }
+        return finalInputs.map { sigmoid(it) }.toDoubleArray()
     }
 }
