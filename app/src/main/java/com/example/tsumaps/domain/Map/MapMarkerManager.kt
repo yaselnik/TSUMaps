@@ -7,12 +7,15 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -21,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -30,13 +34,17 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.tsumaps.domain.models.Place
 import com.example.tsumaps.domain.models.Point
+import com.example.tsumaps.R
 import kotlin.math.roundToInt
 
 data class MapMarker(
+    val id: Int? = null,
     val name: String,
     val position: Point,
-    val type: MarkerType
+    val type: MarkerType,
+    val place: Place? = null
 )
 
 enum class MarkerType {
@@ -59,12 +67,36 @@ class MapMarkerManager(
     }
 
     fun addMarker(name: String, point: Point, type: MarkerType) {
-        addMarker(MapMarker(name, point, type))
+        addMarker(
+            MapMarker(
+                name = name,
+                position = point,
+                type = type
+            )
+        )
+    }
+
+    fun addPlaceMarker(place: Place) {
+        addMarker(
+            MapMarker(
+                id = place.id,
+                name = place.name,
+                position = place.location,
+                type = MarkerType.SHOP,
+                place = place
+            )
+        )
     }
 
     fun addMarker(name: String, xPercent: Float, yPercent: Float, type: MarkerType) {
         val pixelPoint = mapGrid.percentToPixel(xPercent, yPercent)
-        addMarker(MapMarker(name, pixelPoint, type))
+        addMarker(
+            MapMarker(
+                name = name,
+                position = pixelPoint,
+                type = type
+            )
+        )
     }
 
     fun removeMarker(name: String) {
@@ -83,12 +115,15 @@ fun MapWithMarkers(
     markerManager: MapMarkerManager,
     onMapDoubleTap: (Point) -> Unit = {},
     onMarkerClick: (MapMarker) -> Unit = {},
+    onMapTransform: () -> Unit = {},
     content: @Composable (zoom: Float, offset: Offset, imageActualSize: IntSize, containerSize: IntSize) -> Unit = { _, _, _, _ -> }
 ) {
     var zoom by remember { mutableStateOf(1f) }
     var offset by remember { mutableStateOf(Offset.Zero) }
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
     var imageActualSize by remember { mutableStateOf(IntSize.Zero) }
+    val minZoom = 1f
+    val maxZoom = 5f
 
     val mapWidth = mapGrid.getWidth()
     val mapHeight = mapGrid.getHeight()
@@ -159,8 +194,12 @@ fun MapWithMarkers(
             }
             .pointerInput(containerSize, imageActualSize) {
                 detectTransformGestures { centroid, pan, zoomChange, _ ->
+                    if (pan != Offset.Zero || zoomChange != 1f) {
+                        onMapTransform()
+                    }
+
                     val oldZoom = zoom
-                    val newZoom = (zoom * zoomChange).coerceIn(1f, 5f)
+                    val newZoom = (zoom * zoomChange).coerceIn(minZoom, maxZoom)
 
                     val focusX = (centroid.x - offset.x) / oldZoom
                     val focusY = (centroid.y - offset.y) / oldZoom
@@ -183,7 +222,8 @@ fun MapWithMarkers(
                     scaleX = zoom,
                     scaleY = zoom,
                     translationX = offset.x,
-                    translationY = offset.y
+                    translationY = offset.y,
+                    transformOrigin = TransformOrigin(0f, 0f)
                 )
         ) {
             Image(
@@ -193,7 +233,6 @@ fun MapWithMarkers(
                     .fillMaxSize()
                     .onSizeChanged {
                         imageActualSize = it
-                        // Сбрасываем offset при изменении размера
                         offset = clampOffset(offset, zoom)
                         Log.d("MapDebug", "Image size: ${it.width}x${it.height}")
                     },
@@ -208,47 +247,43 @@ fun MapWithMarkers(
                     modifier = Modifier
                         .offset {
                             IntOffset(
-                                x = (markerX - 20).roundToInt(),
-                                y = (markerY - 20).roundToInt()
+                                x = (markerX - 15).roundToInt(),
+                                y = (markerY - 15).roundToInt()
                             )
                         }
-                        .size(40.dp)
+                        .size(30.dp)
                 ) {
-                    var showTooltip by remember { mutableStateOf(false) }
-
                     Surface(
                         modifier = Modifier
                             .fillMaxSize()
                             .clip(CircleShape)
                             .clickable {
-                                showTooltip = !showTooltip
                                 onMarkerClick(marker)
                             },
-                        color = getMarkerColor(marker.type),
+                        color = if (marker.type == MarkerType.SHOP) {
+                            Color.White.copy(alpha = 0.42f)
+                        } else {
+                            getMarkerColor(marker.type)
+                        },
                         shadowElevation = 4.dp
                     ) {
                         Box(contentAlignment = Alignment.Center) {
-                            Text(
-                                text = getMarkerIcon(marker.type),
-                                fontSize = 20.sp
-                            )
-                        }
-                    }
-
-                    if (showTooltip) {
-                        Surface(
-                            modifier = Modifier
-                                .align(Alignment.TopCenter)
-                                .offset(y = (-50).dp),
-                            color = Color.Black.copy(alpha = 0.8f),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Text(
-                                text = marker.name,
-                                color = Color.White,
-                                fontSize = 12.sp,
-                                modifier = Modifier.padding(8.dp)
-                            )
+                            if (marker.type == MarkerType.SHOP) {
+                                Image(
+                                    painter = painterResource(id = R.drawable.shop_icon),
+                                    contentDescription = "Иконка магазина",
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(3.dp),
+                                    alpha = 1f,
+                                    contentScale = ContentScale.Fit
+                                )
+                            } else {
+                                Text(
+                                    text = getMarkerIcon(marker.type),
+                                    fontSize = 14.sp
+                                )
+                            }
                         }
                     }
                 }
@@ -256,6 +291,48 @@ fun MapWithMarkers(
         }
 
         content(zoom, offset, imageActualSize, containerSize)
+
+        Surface(
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .padding(12.dp),
+            color = Color.Black.copy(alpha = 0.65f),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Button(
+                    onClick = {
+                        val newZoom = (zoom + 0.25f).coerceIn(minZoom, maxZoom)
+                        zoom = newZoom
+                        offset = clampOffset(offset, zoom)
+                    },
+                    modifier = Modifier.width(54.dp)
+                ) {
+                    Text("+")
+                }
+                Button(
+                    onClick = {
+                        val newZoom = (zoom - 0.25f).coerceIn(minZoom, maxZoom)
+                        zoom = newZoom
+                        offset = clampOffset(offset, zoom)
+                    },
+                    modifier = Modifier
+                        .padding(top = 6.dp)
+                        .width(54.dp)
+                ) {
+                    Text("-")
+                }
+                Text(
+                    text = "${(zoom * 100).roundToInt()}%",
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(top = 6.dp)
+                )
+            }
+        }
     }
 }
 

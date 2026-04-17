@@ -11,8 +11,8 @@ class GenericAlgorithm (
     private val startPoint: Point,
     private val places: MutableMap<Int, Place>,
     private val request: UserRequest,
-    private val populationSize: Int = 300,
-    private val generations: Int = 800,
+    private val populationSize: Int = 100,//300
+    private val generations: Int = 300,//800
     private val tournamentSize: Int = 5,
     private val mutationRate: Double = 0.2,
     private val elitismCount: Int = 5,
@@ -109,8 +109,9 @@ class GenericAlgorithm (
     }
 
     private fun orderCrossover(parent1: List<Int>, parent2: List<Int>): Pair<List<Int>, List<Int>> {
-        if (parent1.isEmpty() || parent2.isEmpty()) return parent1 to parent2
-
+        if (parent1.isEmpty() || parent2.isEmpty() || parent1.size < 2 || parent2.size < 2) {
+            return parent1.toList() to parent2.toList()
+        }
         val size = parent1.size
         val cutPoints = (0 until size).shuffled().take(2).sorted()
         val (start, end) = cutPoints[0] to cutPoints[1]

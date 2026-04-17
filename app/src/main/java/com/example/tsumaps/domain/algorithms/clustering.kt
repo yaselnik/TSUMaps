@@ -1,94 +1,132 @@
-package com.example.tsumaps.domain.algorithms
+//package com.example.tsumaps.domain.algorithms
 //
-//import android.content.Context
-//import android.graphics.*
-//import android.os.Bundle
-//import android.util.AttributeSet
-//import android.view.View
-//import android.widget.Button
-//import android.widget.EditText
-//import android.widget.TextView
-//import androidx.fragment.app.Fragment
-//import com.example.tsumaps.R
-//import com.example.tsumaps.domain.algorithms.Astar
-//import com.example.tsumaps.domain.algorithms.Grid
-//import kotlin.math.abs
+//import android.util.Log
+//import com.example.tsumaps.domain.map.MapGrid
+//import com.example.tsumaps.domain.map.MapMarker
+//import com.example.tsumaps.domain.models.ClusteringComparisonResult
+//import com.example.tsumaps.domain.models.ClusteringResult
+//import com.example.tsumaps.domain.models.Point
+//import kotlin.math.pow
 //import kotlin.math.sqrt
+//import kotlin.random.Random
 //
-//data class ClusterPoint(
-//    val x: Double,
-//    val y: Double,
-//    val name: String= ""
-//)
 //
-//data class Cluster(
-//    val id: Int,
-//    val centroid: ClusterPoint,
-//    val points: MutableList<ClusterPoint> = mutableListOf(),
-//    val color: Int
-//)
+//class ClusteringAlgorithm(
+//    private val markers: List<MapMarker>,
+//    private val grid: MapGrid
+//) {
+//    private val astar = Astar(grid)
+//    private val aStarDistanceMatrix = mutableMapOf<Pair<Point, Point>, Double>()
 //
-//data class ClusterResult(
-//    val metricName: String,
-//    val clusters: List<Clusters>
-//)
+//    init {
+//        Log.d("Clustering", "Начинаю предрасчет A* расстояний для ${markers.size} маркеров...")
+//        for (i in markers.indices) {
+//            for (j in i + 1 until markers.size) {
+//                val p1 = markers[i].position
+//                val p2 = markers[j].position
 //
-//interface DistanceMetric {
-//    fun name(): String
-//    fun distance(p1: ClusterPoint, p2: ClusterPoint): Double
-//}
+//                val walkableP1 = grid.findNearestWalkable(p1, 100)
+//                val walkableP2 = grid.findNearestWalkable(p2, 100)
 //
-//class EuclidDistance : DistanceMetric {
-//    override fun name() = "Евклидова"
-//    override fun distance(p1: ClusterPoint, p2: ClusterPoint): Double {
-//       val dx = p1.x - p2.x
-//       val dy = p1.y - p2.y
-//       return sqrt(dx * dx + dy * dy)
-//    }
-//}
-//
-//class ManhattanDistance : DistanceMetric {
-//    override fun name() = "Манхэттенская"
-//    override fun distance(p1: ClusterPoint, p2: ClusterPoint): Double {
-//        return abs(p1.x - p2.x) + abs(p1.y - p2.y)
-//    }
-//}
-//
-//class AstarDistance(
-//    private val grid: Grid?,
-//    private val astar: Astar?
-//) : DistanceMetric {
-//    override fun name() = "A*"
-//    override fun distance(p1: ClusterPoint, p2: ClusterPoint): Double {
-//        if (grid == null || astar == null) {
-//            return abs(p1.x - p2.x) + abs(p1.y - p2.y)
-//        }
-//
-//        val start = com.example.tsumaps.domain.models.Point(p1.x.toInt(), p1.y.toInt())
-//        val end = com.example.tsumaps.domain.models.Point(p2.x.toInt(), p2.y.toInt())
-//
-//        if (!grid.isWalkable(start) || !grid.isWalkable(end)) {
-//            return (abs(p1.x - p2.x) + abs(p1.y - p2.y)) * 1.5
-//        }
-//
-//        val path = astar.findPath(start, end)
-//
-//        if (path.isEmpty()) {
-//            return (abs(p1.x - p2.x) + abs(p1.y - p2.y)) * 2.0
-//        }
-//
-//        var length = 0.0
-//        for (i in 0 until path.size - 1) {
-//            val dx = abs(path[i + 1].x - path[i].x)
-//            val dy = abs(path[i + 1].y - path[i].y)
-//
-//            if (dx != 0 && dy != 0) {
-//                length += sqrt(2.0)
-//            } else {
-//                length += 1.0
+//                if (walkableP1 != null && walkableP2 != null) {
+//                    val distance = astar.calculatePath(walkableP1, walkableP2)
+//                    aStarDistanceMatrix[p1 to p2] = distance
+//                    aStarDistanceMatrix[p2 to p1] = distance
+//                } else {
+//                    aStarDistanceMatrix[p1 to p2] = Double.MAX_VALUE
+//                    aStarDistanceMatrix[p2 to p1] = Double.MAX_VALUE
+//                    Log.w("Clustering", "Не удалось найти проходимый путь между ${markers[i].name} и ${markers[j].name}")
+//                }
 //            }
 //        }
+//        Log.d("Clustering", "Предрасчет A* расстояний завершен.")
+//    }
 //
-//        return length
+//    private fun euclideanDistance(p1: Point, p2: Point): Double {
+//        return sqrt((p1.x - p2.x).toDouble().pow(2) + (p1.y - p2.y).toDouble().pow(2))
+//    }
+//
+//    private fun getAStarDistance(p1: Point, p2: Point): Double {
+//        if (p1 == p2) return 0.0
+//        return aStarDistanceMatrix[p1 to p2] ?: Double.MAX_VALUE
+//    }
+//
+//    fun performClusteringComparison(k: Int): ClusteringComparisonResult {
+//        if (markers.size < k) {
+//            Log.e("Clustering", "Количество маркеров (${markers.size}) меньше, чем k ($k).")
+//            val emptyResult = ClusteringResult(emptyMap())
+//            return ClusteringComparisonResult(emptyResult, emptyResult, emptyMap())
+//        }
+//
+//        Log.d("Clustering", "Запуск кластеризации с евклидовой метрикой...")
+//        val euclideanResult = runKMeans(k) { p1, p2 -> euclideanDistance(p1, p2) }
+//
+//        Log.d("Clustering", "Запуск кластеризации с A* метрикой...")
+//        val aStarResult = runKMeans(k) { p1, p2 -> getAStarDistance(p1, p2) }
+//
+//        Log.d("Clustering", "Сравнение результатов...")
+//        val changedMarkers = findChangedMarkers(euclideanResult, aStarResult)
+//
+//        return ClusteringComparisonResult(euclideanResult, aStarResult, changedMarkers)
+//    }
+//
+//    private fun runKMeans(
+//        k: Int,
+//        maxIterations: Int = 100,
+//        distanceMetric: (Point, Point) -> Double
+//    ): ClusteringResult {
+//        var centroids = markers.shuffled(Random).take(k).map { it.position }
+//        var assignments = mutableMapOf<Int, MutableList<MapMarker>>()
+//
+//        for (i in 0 until maxIterations) {
+//            val newAssignments = mutableMapOf<Int, MutableList<MapMarker>>()
+//            for (idx in 0 until k) { newAssignments[idx] = mutableListOf() }
+//
+//            for (marker in markers) {
+//                val closestCentroidIndex = centroids.indices.minByOrNull {
+//                    distanceMetric(marker.position, centroids[it])
+//                } ?: 0
+//                newAssignments[closestCentroidIndex]?.add(marker)
+//            }
+//
+//            if (assignments.toString() == newAssignments.toString()) {
+//                Log.d("KMeans", "Алгоритм сошелся на итерации $i")
+//                break
+//            }
+//            assignments = newAssignments
+//
+//            val newCentroids = mutableListOf<Point>()
+//            for (clusterIndex in 0 until k) {
+//                val clusterMarkers = assignments[clusterIndex]
+//                if (clusterMarkers.isNullOrEmpty()) {
+//                    newCentroids.add(markers.random(Random).position)
+//                } else {
+//                    val avgX = clusterMarkers.map { it.position.x }.average().toInt()
+//                    val avgY = clusterMarkers.map { it.position.y }.average().toInt()
+//                    newCentroids.add(Point(avgX, avgY))
+//                }
+//            }
+//            centroids = newCentroids
+//        }
+//
+//        return ClusteringResult(assignments)
+//    }
+//
+//    private fun findChangedMarkers(
+//        result1: ClusteringResult,
+//        result2: ClusteringResult
+//    ): Map<MapMarker, Pair<Int, Int>> {
+//        val map1 = result1.clusters.flatMap { (id, markers) -> markers.map { it to id } }.toMap()
+//        val map2 = result2.clusters.flatMap { (id, markers) -> markers.map { it to id } }.toMap()
+//
+//        val changed = mutableMapOf<MapMarker, Pair<Int, Int>>()
+//        for (marker in markers) {
+//            val cluster1 = map1[marker]
+//            val cluster2 = map2[marker]
+//            if (cluster1 != null && cluster2 != null && cluster1 != cluster2) {
+//                changed[marker] = cluster1 to cluster2
+//            }
+//        }
+//        return changed
 //    }
 //}

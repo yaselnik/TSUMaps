@@ -7,6 +7,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.IntSize
 import com.example.tsumaps.domain.map.MapGrid
@@ -33,7 +34,8 @@ fun WalkableOverlay(
                 scaleX = zoom,
                 scaleY = zoom,
                 translationX = pan.x,
-                translationY = pan.y
+                translationY = pan.y,
+                transformOrigin = TransformOrigin(0f, 0f)
             )
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
