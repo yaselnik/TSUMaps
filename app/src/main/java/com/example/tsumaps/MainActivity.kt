@@ -3,7 +3,10 @@ package com.example.tsumaps
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -19,6 +22,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -30,6 +34,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,107 +44,233 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.tsumaps.domain.debug.WalkableOverlay
+import com.example.tsumaps.domain.algorithms.AntColonyOptimization
+import com.example.tsumaps.domain.algorithms.ClusteringAlgorithm
+import com.example.tsumaps.domain.algorithms.decisionTree.CSVParser
+import com.example.tsumaps.domain.algorithms.decisionTree.DecisionTree
+import com.example.tsumaps.domain.algorithms.decisionTree.DecisionTreeNode
 import com.example.tsumaps.domain.map.MapGrid
+import com.example.tsumaps.domain.map.MapMarker
 import com.example.tsumaps.domain.map.MapMarkerManager
+import com.example.tsumaps.domain.map.MarkerType
 import com.example.tsumaps.domain.map.MapWithMarkers
 import com.example.tsumaps.domain.path.PathManager
 import com.example.tsumaps.domain.path.PathPointsOverlay
+import com.example.tsumaps.domain.models.CoworkingLocation
 import com.example.tsumaps.domain.models.Place
 import com.example.tsumaps.domain.models.PlaceStorage
+import com.example.tsumaps.domain.models.Sample
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import com.example.tsumaps.domain.models.Point
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.absoluteValue
 
 class MainActivity : ComponentActivity() {
 
-    private lateinit var mapGrid: MapGrid
-    private lateinit var markerManager: MapMarkerManager
-    private lateinit var pathManager: PathManager
-    private lateinit var placeStorage: PlaceStorage
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        try {
-            mapGrid = MapGrid(this)
-            mapGrid.buildFromImage(R.drawable.map_for_grid)
+        setContent {
+            var initError by remember { mutableStateOf<String?>(null) }
+            var uiReady by remember { mutableStateOf(false) }
 
-            markerManager = MapMarkerManager(mapGrid)
-            pathManager = PathManager(mapGrid)
-            placeStorage = PlaceStorage()
+            var mapGrid by remember { mutableStateOf<MapGrid?>(null) }
+            var markerManager by remember { mutableStateOf<MapMarkerManager?>(null) }
+            var pathManager by remember { mutableStateOf<PathManager?>(null) }
+            var placeStorage by remember { mutableStateOf<PlaceStorage?>(null) }
 
-//            addAllMarkers()
-            placeStorage = PlaceStorage()
-            addAllGoods()
-            pathManager.updatePlaces(placeStorage.places.associateBy { it.id })
-            addPlaceMarkers()
+            var decisionTree by remember { mutableStateOf<DecisionTree?>(null) }
 
-            setContent {
-                val startPoint = pathManager.startPoint
-                val endPoint = pathManager.endPoint
-                val path = pathManager.path
-                val message = pathManager.message
-                val selectedAlgorithm = pathManager.selectedAlgorithm
-                val currentMode = pathManager.mode
-                val selectedGoods = pathManager.requiredGoods
+            LaunchedEffect(Unit) {
+                try {
+                    val grid = MapGrid(this@MainActivity)
+                    withContext(Dispatchers.Default) {
+                        grid.buildFromImage(R.drawable.map_for_grid)
+                    }
 
-                var showWalkable by remember { mutableStateOf(false) }
-                var showSettings by remember { mutableStateOf(false) }
-                var isBottomPanelExpanded by remember { mutableStateOf(false) }
-                var selectedPlace by remember { mutableStateOf<Place?>(null) }
-                var showGoodsPicker by remember { mutableStateOf(false) }
-                val tempSelectedGoods = remember { mutableStateListOf<String>() }
-                val timeFormatter = remember { DateTimeFormatter.ofPattern("HH:mm") }
-                val allGoods = remember(placeStorage.goods) { placeStorage.goods.toList().sorted() }
-                val relevantGoodsPlaces = remember(selectedGoods, placeStorage.places) {
-                    if (selectedGoods.isEmpty()) {
-                        emptyList()
-                    } else {
-                        placeStorage.places.filter { place ->
-                            place.menu.any { it in selectedGoods }
+                    val pm = PathManager(grid)
+                    val ps = PlaceStorage().also { storage ->
+                        addAllGoods(storage)
+                        pm.updatePlaces(storage.places.associateBy { it.id })
+                    }
+
+                    val mm = MapMarkerManager(grid).also {
+                        it.clearMarkers()
+                        ps.places.forEach { place -> it.addPlaceMarker(place) }
+                    }
+
+                    val samples = CSVParser().parseAsset(this@MainActivity, "decision_tree_samples.csv")
+                    val tree = DecisionTree(root = DecisionTreeNode.Leaf("Unknown")).also {
+                        it.buildTree(
+                            samples = samples,
+                            attributes = listOf(
+                                "location",
+                                "budget",
+                                "time_available",
+                                "food_type",
+                                "queue_tolerance",
+                                "weather"
+                            )
+                        )
+                    }
+
+                    mapGrid = grid
+                    pathManager = pm
+                    placeStorage = ps
+                    markerManager = mm
+                    decisionTree = tree
+                    uiReady = true
+                } catch (e: Exception) {
+                    Log.e("MainActivity", "Init error: ${e.message}", e)
+                    initError = e.message ?: "Unknown error"
+                }
+            }
+
+            if (!uiReady) {
+                Surface(modifier = Modifier.fillMaxSize(), color = Color(0xFF0B1220)) {
+                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text(
+                            text = initError?.let { "Ошибка инициализации: $it" } ?: "Загрузка карты…",
+                            color = Color.White,
+                            fontSize = 16.sp
+                        )
+                    }
+                }
+                return@setContent
+            }
+
+            val grid = mapGrid!!
+            val mm = markerManager!!
+            val pm = pathManager!!
+            val ps = placeStorage!!
+            val tree = decisionTree
+
+            val startPoint = pm.startPoint
+            val endPoint = pm.endPoint
+            val path = pm.path
+            val message = pm.message
+            val selectedAlgorithm = pm.selectedAlgorithm
+            val currentMode = pm.mode
+            val selectedGoods = pm.requiredGoods
+
+            var showWalkable by remember { mutableStateOf(false) }
+            var showSettings by remember { mutableStateOf(false) }
+            var isBottomPanelExpanded by remember { mutableStateOf(false) }
+            var selectedPlace by remember { mutableStateOf<Place?>(null) }
+            var showGoodsPicker by remember { mutableStateOf(false) }
+            val tempSelectedGoods = remember { mutableStateListOf<String>() }
+            val timeFormatter = remember { DateTimeFormatter.ofPattern("HH:mm") }
+            val allGoods = remember(ps.goods) { ps.goods.toList().sorted() }
+            val relevantGoodsPlaces = remember(selectedGoods, ps.places) {
+                if (selectedGoods.isEmpty()) {
+                    emptyList()
+                } else {
+                    ps.places.filter { place ->
+                        place.menu.any { it in selectedGoods }
+                    }
+                }
+            }
+
+            var dtBudget by remember { mutableStateOf("medium") }
+            var dtTime by remember { mutableStateOf("short") }
+            var dtFoodType by remember { mutableStateOf("grocery") }
+            var dtQueue by remember { mutableStateOf("medium") }
+            var dtWeather by remember { mutableStateOf("any") }
+            val scope = rememberCoroutineScope()
+
+            var algorithmsInfo by remember { mutableStateOf<String?>(null) }
+            var markerAccentByKey by remember { mutableStateOf<Map<String, Color>>(emptyMap()) }
+
+            var showPathMenu by remember { mutableStateOf(false) }
+            var showDecisionTreeMenu by remember { mutableStateOf(false) }
+            var showClusteringMenu by remember { mutableStateOf(false) }
+            var showAcoMenu by remember { mutableStateOf(false) }
+
+            var decisionTreeCsvText by remember { mutableStateOf("") }
+            var decisionTreeBuiltText by remember { mutableStateOf<String?>(null) }
+            var decisionTreePathText by remember { mutableStateOf<String?>(null) }
+            var dtLocation by remember { mutableStateOf("main_building") }
+            var dtFoodTypeUi by remember { mutableStateOf("coffee") }
+
+            val csvPicker = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.GetContent(),
+                onResult = { uri ->
+                    if (uri != null) {
+                        scope.launch {
+                            try {
+                                val content = withContext(Dispatchers.IO) {
+                                    contentResolver.openInputStream(uri)
+                                        ?.bufferedReader()
+                                        ?.use { it.readText() }
+                                } ?: ""
+                                decisionTreeCsvText = content
+                                algorithmsInfo = "✅ CSV загружен из файла (${content.lines().size} строк)"
+                            } catch (e: Exception) {
+                                algorithmsInfo = "❌ Не удалось прочитать CSV: ${e.message}"
+                            }
                         }
                     }
                 }
+            )
 
-                Box(modifier = Modifier.fillMaxSize()) {
+            fun guessFoodTypeFromGoods(goods: Set<String>): String {
+                val g = goods.map { it.lowercase() }.toSet()
+                return when {
+                    g.any { "кофе" in it } -> "coffee"
+                    g.any { "блин" in it } -> "food"
+                    g.any { it.contains("первое") || it.contains("второе") || it.contains("пельмени") } -> "meal"
+                    g.any { it.contains("руч") || it.contains("карандаш") || it.contains("хоз") } -> "stationery"
+                    g.isNotEmpty() -> "grocery"
+                    else -> "grocery"
+                }
+            }
 
-                    MapWithMarkers(
-                        mapImageRes = R.drawable.map,
-                        mapGrid = mapGrid,
-                        markerManager = markerManager,
-                        onMapDoubleTap = { point ->
-                            Log.d("MainActivity", "Tap: $point")
-                            selectedPlace = null
-                            pathManager.onDoubleTap(point)
-                        },
-                        onMarkerClick = { marker ->
-                            Log.d("Marker", "Clicked: ${marker.name}")
-                            selectedPlace = marker.place
-                        },
-                        onMapTransform = {
-                            isBottomPanelExpanded = false
-                        }
-                    ) { zoom, pan, imageActualSize, containerSize ->
+            Box(modifier = Modifier.fillMaxSize()) {
 
-                        WalkableOverlay(
-                            mapGrid = mapGrid,
-                            zoom = zoom,
-                            pan = pan,
-                            imageActualSize = imageActualSize,
-                            enabled = showWalkable
-                        )
-
-                        PathPointsOverlay(
-                            startPoint = startPoint,
-                            endPoint = endPoint,
-                            path = path,
-                            mapGrid = mapGrid,
-                            zoom = zoom,
-                            pan = pan,
-                            imageActualSize = imageActualSize
-                        )
+                MapWithMarkers(
+                    mapImageRes = R.drawable.map,
+                    mapGrid = grid,
+                    markerManager = mm,
+                    onMapDoubleTap = { point ->
+                        Log.d("MainActivity", "Tap: $point")
+                        selectedPlace = null
+                        pm.onDoubleTap(point)
+                    },
+                    onMarkerClick = { marker ->
+                        Log.d("Marker", "Clicked: ${marker.name}")
+                        selectedPlace = marker.place
+                    },
+                    onMapTransform = {
+                        isBottomPanelExpanded = false
                     }
+                    ,
+                    markerAccentColor = { marker ->
+                        val key = marker.id?.toString() ?: marker.name
+                        markerAccentByKey[key]
+                    }
+                ) { zoom, pan, imageActualSize, _ ->
+
+                    WalkableOverlay(
+                        mapGrid = grid,
+                        zoom = zoom,
+                        pan = pan,
+                        imageActualSize = imageActualSize,
+                        enabled = showWalkable
+                    )
+
+                    PathPointsOverlay(
+                        startPoint = startPoint,
+                        endPoint = endPoint,
+                        path = path,
+                        mapGrid = grid,
+                        zoom = zoom,
+                        pan = pan,
+                        imageActualSize = imageActualSize
+                    )
+                }
 
                     IconButton(
                         modifier = Modifier
@@ -172,23 +304,6 @@ class MainActivity : ComponentActivity() {
                                     color = Color.White,
                                     fontSize = 16.sp
                                 )
-                                Text(
-                                    text = "Алгоритм поиска",
-                                    color = Color(0xFFB0BEC5),
-                                    fontSize = 12.sp
-                                )
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    FilterChip(
-                                        selected = selectedAlgorithm == PathManager.SearchAlgorithm.Astar,
-                                        onClick = { pathManager.setSearchAlgorithm(PathManager.SearchAlgorithm.Astar) },
-                                        label = { Text("Astar") }
-                                    )
-                                    FilterChip(
-                                        selected = selectedAlgorithm == PathManager.SearchAlgorithm.GenericAlgorithm,
-                                        onClick = { pathManager.setSearchAlgorithm(PathManager.SearchAlgorithm.GenericAlgorithm) },
-                                        label = { Text("GenericAlgorithm") }
-                                    )
-                                }
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Checkbox(
                                         checked = showWalkable,
@@ -200,11 +315,6 @@ class MainActivity : ComponentActivity() {
                                         fontSize = 12.sp
                                     )
                                 }
-                                Text(
-                                    text = "Зум: pinch или кнопки справа",
-                                    color = Color(0xFF9FB1C4),
-                                    fontSize = 11.sp
-                                )
                             }
                         }
                     }
@@ -271,6 +381,53 @@ class MainActivity : ComponentActivity() {
                                         color = Color.White,
                                         fontSize = 13.sp
                                     )
+
+                                    Text(
+                                        text = "Алгоритмы",
+                                        color = Color(0xFFE5E7EB),
+                                        fontSize = 13.sp
+                                    )
+                                    Button(
+                                        onClick = { showPathMenu = true },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4B5563))
+                                    ) { Text("Маршрут — поиск пути") }
+
+                                    Button(
+                                        onClick = { showDecisionTreeMenu = true },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED))
+                                    ) { Text("Дерево решений — куда пойти поесть") }
+
+                                    Button(
+                                        onClick = { showClusteringMenu = true },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0EA5E9))
+                                    ) { Text("Кластеризация — зоны еды") }
+
+                                    Button(
+                                        onClick = { showAcoMenu = true },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF16A34A))
+                                    ) { Text("Муравьиный алгоритм — коворкинг") }
+
+                                    Button(
+                                        onClick = {
+                                            markerAccentByKey = emptyMap()
+                                            algorithmsInfo = "ℹ️ Подсветка алгоритмов очищена."
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF334155))
+                                    ) { Text("Очистить подсветку") }
+
+                                    if (algorithmsInfo != null) {
+                                        Surface(
+                                            color = Color(0xFF0B1220).copy(alpha = 0.6f),
+                                            shape = RoundedCornerShape(12.dp)
+                                        ) {
+                                            Text(
+                                                text = algorithmsInfo!!,
+                                                color = Color(0xFFE5E7EB),
+                                                fontSize = 11.sp,
+                                                modifier = Modifier.padding(10.dp)
+                                            )
+                                        }
+                                    }
                                     if (currentMode == "goods") {
                                         Row(
                                             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -287,7 +444,7 @@ class MainActivity : ComponentActivity() {
                                                 modifier = Modifier.weight(1f)
                                             )
                                             Button(
-                                                onClick = { pathManager.clearGoodsRequest() },
+                                                onClick = { pm.clearGoodsRequest() },
                                                 colors = ButtonDefaults.buttonColors(
                                                     containerColor = Color(
                                                         0xFF4B5563
@@ -352,7 +509,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                         Button(
-                                            onClick = { pathManager.setSimpleMode() },
+                                            onClick = { pm.setSimpleMode() },
                                             modifier = Modifier.weight(1f),
                                             colors = ButtonDefaults.buttonColors(
                                                 containerColor = Color(
@@ -365,7 +522,7 @@ class MainActivity : ComponentActivity() {
                                         Button(
                                             onClick = {
                                                 tempSelectedGoods.clear()
-                                                tempSelectedGoods.addAll(pathManager.requiredGoods)
+                                                tempSelectedGoods.addAll(pm.requiredGoods)
                                                 showGoodsPicker = true
                                             },
                                             modifier = Modifier.weight(1f),
@@ -382,8 +539,12 @@ class MainActivity : ComponentActivity() {
                                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                                     ) {
                                         Button(
-                                            onClick = { pathManager.buildPath() },
-                                            enabled = pathManager.hasTwoPoints(),
+                                            onClick = {
+                                                scope.launch {
+                                                    pm.buildPath()
+                                                }
+                                            },
+                                            enabled = pm.hasTwoPoints(),
                                             modifier = Modifier.weight(1f),
                                             colors = ButtonDefaults.buttonColors(
                                                 containerColor = Color(
@@ -395,7 +556,7 @@ class MainActivity : ComponentActivity() {
                                         }
 
                                         Button(
-                                            onClick = { pathManager.reset() },
+                                            onClick = { pm.reset() },
                                             modifier = Modifier.weight(1f),
                                             colors = ButtonDefaults.buttonColors(
                                                 containerColor = Color(
@@ -404,6 +565,40 @@ class MainActivity : ComponentActivity() {
                                             )
                                         ) {
                                             Text("Сбросить")
+                                        }
+                                    }
+
+                                    if (currentMode == "goods") {
+                                        Button(
+                                            onClick = {
+                                                val inferredFoodType = guessFoodTypeFromGoods(selectedGoods)
+                                                dtFoodType = inferredFoodType
+
+                                                val recommendation = tree?.classify(
+                                                    Sample(
+                                                        location = "campus",
+                                                        budget = dtBudget,
+                                                        timeAvailable = dtTime,
+                                                        foodType = dtFoodType,
+                                                        queueTolerance = dtQueue,
+                                                        weather = dtWeather,
+                                                        recommendedPlace = ""
+                                                    )
+                                                ) ?: "Unknown"
+
+                                                val place = ps.places.firstOrNull { it.name == recommendation }
+                                                if (place != null) {
+                                                    selectedPlace = place
+                                                } else {
+                                                    Log.w("DecisionTree", "No place found for recommendation: $recommendation")
+                                                }
+                                            },
+                                            enabled = tree != null,
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = Color(0xFF7C3AED)
+                                            )
+                                        ) {
+                                            Text("Рекомендовать место (дерево)")
                                         }
                                     }
                                 }
@@ -444,8 +639,10 @@ class MainActivity : ComponentActivity() {
                                 confirmButton = {
                                     Button(
                                         onClick = {
-                                            val built = pathManager.buildPathToPlace(place)
-                                            if (built) selectedPlace = null
+                                            scope.launch {
+                                                val built = pm.buildPathToPlace(place)
+                                                if (built) selectedPlace = null
+                                            }
                                         },
                                         colors = ButtonDefaults.buttonColors(
                                             containerColor = Color(
@@ -534,7 +731,7 @@ class MainActivity : ComponentActivity() {
                                 Button(
                                     onClick = {
                                         if (tempSelectedGoods.isNotEmpty()) {
-                                            pathManager.setGoodsRequest(tempSelectedGoods.toSet())
+                                            pm.setGoodsRequest(tempSelectedGoods.toSet())
                                         }
                                         showGoodsPicker = false
                                     },
@@ -561,14 +758,339 @@ class MainActivity : ComponentActivity() {
                             }
                         )
                     }
+
+                    if (showPathMenu) {
+                        AlertDialog(
+                            onDismissRequest = { showPathMenu = false },
+                            containerColor = Color(0xFF0F172A),
+                            title = { Text("Маршрут — поиск пути", color = Color.White) },
+                            text = {
+                                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    Text("Выберите алгоритм поиска маршрута", color = Color(0xFFB0BEC5), fontSize = 12.sp)
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        FilterChip(
+                                            selected = selectedAlgorithm == PathManager.SearchAlgorithm.Astar,
+                                            onClick = { pm.setSearchAlgorithm(PathManager.SearchAlgorithm.Astar) },
+                                            label = { Text("A*") }
+                                        )
+                                        FilterChip(
+                                            selected = selectedAlgorithm == PathManager.SearchAlgorithm.GenericAlgorithm,
+                                            onClick = { pm.setSearchAlgorithm(PathManager.SearchAlgorithm.GenericAlgorithm) },
+                                            label = { Text("Генетический") }
+                                        )
+                                    }
+                                    Text(
+                                        "Поставьте точки (двойной тап) и нажмите «Запустить» в панели управления.",
+                                        color = Color(0xFF9FB1C4),
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            },
+                            confirmButton = {
+                                TextButton(onClick = { showPathMenu = false }) { Text("Закрыть") }
+                            }
+                        )
+                    }
+
+                    if (showClusteringMenu) {
+                        var k by remember { mutableStateOf(3) }
+                        AlertDialog(
+                            onDismissRequest = { showClusteringMenu = false },
+                            containerColor = Color(0xFF0F172A),
+                            title = { Text("Кластеризация — зоны еды", color = Color.White) },
+                            text = {
+                                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    Text("K-means. Подсветит магазины обводкой по кластерам.", color = Color(0xFFB0BEC5), fontSize = 12.sp)
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        FilterChip(selected = k == 2, onClick = { k = 2 }, label = { Text("k=2") })
+                                        FilterChip(selected = k == 3, onClick = { k = 3 }, label = { Text("k=3") })
+                                        FilterChip(selected = k == 4, onClick = { k = 4 }, label = { Text("k=4") })
+                                    }
+                                }
+                            },
+                            confirmButton = {
+                                Button(
+                                    onClick = {
+                                        scope.launch {
+                                            val shopMarkers = mm.markers.filter { it.type == MarkerType.SHOP }
+                                            val palette = listOf(
+                                                Color(0xFF22C55E),
+                                                Color(0xFF3B82F6),
+                                                Color(0xFFF97316),
+                                                Color(0xFFE11D48),
+                                                Color(0xFFA855F7)
+                                            )
+                                            val result = withContext(Dispatchers.Default) {
+                                                ClusteringAlgorithm(shopMarkers, grid).performClusteringComparison(k = k)
+                                            }
+                                            val byMarker = result.aStarResult.clusters
+                                                .flatMap { (clusterId, markers) ->
+                                                    markers.map { m ->
+                                                        val key = m.id?.toString() ?: m.name
+                                                        key to palette[clusterId % palette.size]
+                                                    }
+                                                }
+                                                .toMap()
+                                            markerAccentByKey = byMarker
+                                            algorithmsInfo =
+                                                "✅ Кластеризация: k=$k, A* метрика.\n" +
+                                                        "Кластеров: ${result.aStarResult.clusters.size}, " +
+                                                        "разошлись с евклидовой: ${result.changedMarkers.size} точек."
+                                            showClusteringMenu = false
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0EA5E9))
+                                ) { Text("Запустить") }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { showClusteringMenu = false }) { Text("Отмена") }
+                            }
+                        )
+                    }
+
+                    if (showAcoMenu) {
+                        var students by remember { mutableStateOf(20) }
+                        AlertDialog(
+                            onDismissRequest = { showAcoMenu = false },
+                            containerColor = Color(0xFF0F172A),
+                            title = { Text("Муравьиный алгоритм — коворкинг", color = Color.White) },
+                            text = {
+                                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    Text("Распределяет группу по локациям (пример бонусного варианта).", color = Color(0xFFB0BEC5), fontSize = 12.sp)
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        FilterChip(selected = students == 10, onClick = { students = 10 }, label = { Text("10") })
+                                        FilterChip(selected = students == 20, onClick = { students = 20 }, label = { Text("20") })
+                                        FilterChip(selected = students == 30, onClick = { students = 30 }, label = { Text("30") })
+                                    }
+                                }
+                            },
+                            confirmButton = {
+                                Button(
+                                    onClick = {
+                                        scope.launch {
+                                            val start = pm.startPoint ?: Point(grid.getWidth() / 2, grid.getHeight() / 2)
+                                            val coworkingMarkers = listOf(
+                                                MapMarker(id = -101, name = "Коворкинг A", position = Point(320, 755), type = MarkerType.BUILDING),
+                                                MapMarker(id = -102, name = "Коворкинг B", position = Point(255, 890), type = MarkerType.BUILDING),
+                                                MapMarker(id = -103, name = "Коворкинг C", position = Point(715, 1430), type = MarkerType.BUILDING)
+                                            )
+
+                                            coworkingMarkers.forEach { m ->
+                                                val exists = mm.markers.any { it.id == m.id || it.name == m.name }
+                                                if (!exists) mm.addMarker(m)
+                                            }
+
+                                            val locations = listOf(
+                                                CoworkingLocation(coworkingMarkers[0], capacity = 10, comfort = 0.9),
+                                                CoworkingLocation(coworkingMarkers[1], capacity = 8, comfort = 0.8),
+                                                CoworkingLocation(coworkingMarkers[2], capacity = 12, comfort = 0.7)
+                                            )
+                                            val result = withContext(Dispatchers.Default) {
+                                                AntColonyOptimization(
+                                                    startPoint = start,
+                                                    studentCount = students,
+                                                    allLocations = locations,
+                                                    grid = grid
+                                                ).run()
+                                            }
+
+                                            val acoAccent = result.distribution.entries.associate { (loc, count) ->
+                                                val key = loc.marker.id?.toString() ?: loc.marker.name
+                                                key to (if (count > 0) Color(0xFFF59E0B) else Color(0xFF64748B))
+                                            }
+                                            markerAccentByKey = markerAccentByKey + acoAccent
+
+                                            val summary = result.distribution.entries
+                                                .sortedByDescending { it.value }
+                                                .joinToString(separator = "\n") { (loc, count) ->
+                                                    "• ${loc.marker.name}: $count/${loc.capacity}"
+                                                }
+                                            algorithmsInfo =
+                                                "✅ ACO: студентов=$students\n" +
+                                                        "Неразмещено: ${result.unassignedStudents}\n" +
+                                                        summary
+                                            showAcoMenu = false
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF16A34A))
+                                ) { Text("Запустить") }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { showAcoMenu = false }) { Text("Отмена") }
+                            }
+                        )
+                    }
+
+                    if (showDecisionTreeMenu) {
+                        LaunchedEffect(showDecisionTreeMenu) {
+                            if (showDecisionTreeMenu && decisionTreeCsvText.isBlank()) {
+                                decisionTreeCsvText = withContext(Dispatchers.IO) {
+                                    assets.open("decision_tree_samples.csv").bufferedReader().use { it.readText() }
+                                }
+                            }
+                        }
+
+                        AlertDialog(
+                            onDismissRequest = { showDecisionTreeMenu = false },
+                            containerColor = Color(0xFF0F172A),
+                            title = { Text("Дерево решений — куда пойти поесть", color = Color.White) },
+                            text = {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(max = 420.dp)
+                                        .verticalScroll(rememberScrollState()),
+                                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Text("Шаг 1: загрузить CSV", color = Color(0xFFB0BEC5), fontSize = 12.sp)
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Button(
+                                            onClick = { csvPicker.launch("text/*") },
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF334155))
+                                        ) { Text("Выбрать файл") }
+                                        Button(
+                                            onClick = {
+                                                scope.launch {
+                                                    decisionTreeCsvText = withContext(Dispatchers.IO) {
+                                                        assets.open("decision_tree_samples.csv").bufferedReader().use { it.readText() }
+                                                    }
+                                                    algorithmsInfo = "✅ Загружен CSV по умолчанию (из фото)"
+                                                }
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF475569))
+                                        ) { Text("По умолчанию") }
+                                    }
+
+                                    Text("CSV текст:", color = Color(0xFF9FB1C4), fontSize = 11.sp)
+                                    TextField(
+                                        value = decisionTreeCsvText,
+                                        onValueChange = { decisionTreeCsvText = it },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .heightIn(min = 140.dp, max = 220.dp),
+                                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 11.sp)
+                                    )
+
+                                    Button(
+                                        onClick = {
+                                            scope.launch {
+                                                val samples = CSVParser().parseCSVText(decisionTreeCsvText)
+                                                if (samples.isEmpty()) {
+                                                    algorithmsInfo = "❌ CSV пустой или неверный формат"
+                                                    return@launch
+                                                }
+                                                val newTree = DecisionTree(root = DecisionTreeNode.Leaf("Unknown")).also {
+                                                    it.buildTree(
+                                                        samples = samples,
+                                                        attributes = listOf(
+                                                            "location",
+                                                            "budget",
+                                                            "time_available",
+                                                            "food_type",
+                                                            "queue_tolerance",
+                                                            "weather"
+                                                        )
+                                                    )
+                                                }
+                                                decisionTree = newTree
+                                                decisionTreeBuiltText = newTree.prettyPrint()
+                                                decisionTreePathText = null
+                                                algorithmsInfo = "✅ Дерево построено. Записей: ${samples.size}"
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED))
+                                    ) { Text("Шаг 2: построить дерево") }
+
+                                    decisionTreeBuiltText?.let { treeText ->
+                                        Text("Построенное дерево:", color = Color(0xFFB0BEC5), fontSize = 12.sp)
+                                        Surface(color = Color(0xFF0B1220).copy(alpha = 0.6f), shape = RoundedCornerShape(12.dp)) {
+                                            Text(
+                                                text = treeText,
+                                                color = Color(0xFFE5E7EB),
+                                                fontSize = 11.sp,
+                                                modifier = Modifier.padding(10.dp)
+                                            )
+                                        }
+
+                                        Text("Шаг 3: ввод параметров", color = Color(0xFFB0BEC5), fontSize = 12.sp)
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            FilterChip(selected = dtLocation == "main_building", onClick = { dtLocation = "main_building" }, label = { Text("main_building") })
+                                            FilterChip(selected = dtLocation == "second_building", onClick = { dtLocation = "second_building" }, label = { Text("second_building") })
+                                            FilterChip(selected = dtLocation == "campus_center", onClick = { dtLocation = "campus_center" }, label = { Text("campus_center") })
+                                        }
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            FilterChip(selected = dtBudget == "low", onClick = { dtBudget = "low" }, label = { Text("budget: low") })
+                                            FilterChip(selected = dtBudget == "medium", onClick = { dtBudget = "medium" }, label = { Text("budget: medium") })
+                                            FilterChip(selected = dtBudget == "high", onClick = { dtBudget = "high" }, label = { Text("budget: high") })
+                                        }
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            FilterChip(selected = dtTime == "very_short", onClick = { dtTime = "very_short" }, label = { Text("time: very_short") })
+                                            FilterChip(selected = dtTime == "short", onClick = { dtTime = "short" }, label = { Text("time: short") })
+                                            FilterChip(selected = dtTime == "medium", onClick = { dtTime = "medium" }, label = { Text("time: medium") })
+                                        }
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            FilterChip(selected = dtFoodTypeUi == "snack", onClick = { dtFoodTypeUi = "snack" }, label = { Text("snack") })
+                                            FilterChip(selected = dtFoodTypeUi == "coffee", onClick = { dtFoodTypeUi = "coffee" }, label = { Text("coffee") })
+                                            FilterChip(selected = dtFoodTypeUi == "full_meal", onClick = { dtFoodTypeUi = "full_meal" }, label = { Text("full_meal") })
+                                            FilterChip(selected = dtFoodTypeUi == "pancakes", onClick = { dtFoodTypeUi = "pancakes" }, label = { Text("pancakes") })
+                                        }
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            FilterChip(selected = dtQueue == "low", onClick = { dtQueue = "low" }, label = { Text("queue: low") })
+                                            FilterChip(selected = dtQueue == "medium", onClick = { dtQueue = "medium" }, label = { Text("queue: medium") })
+                                        }
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            FilterChip(selected = dtWeather == "good", onClick = { dtWeather = "good" }, label = { Text("weather: good") })
+                                            FilterChip(selected = dtWeather == "bad", onClick = { dtWeather = "bad" }, label = { Text("weather: bad") })
+                                        }
+
+                                        Button(
+                                            onClick = {
+                                                val t = decisionTree ?: return@Button
+                                                val r = t.classifyWithPath(
+                                                    Sample(
+                                                        location = dtLocation,
+                                                        budget = dtBudget,
+                                                        timeAvailable = dtTime,
+                                                        foodType = dtFoodTypeUi,
+                                                        queueTolerance = dtQueue,
+                                                        weather = dtWeather,
+                                                        recommendedPlace = ""
+                                                    )
+                                                )
+                                                decisionTreePathText = buildString {
+                                                    append("Результат: ").append(r.result).append("\n\nПуть по узлам:\n")
+                                                    r.path.forEachIndexed { idx, step ->
+                                                        append("${idx + 1}) ${step.attribute} = ${step.value} (ветки: ${step.availableBranches.joinToString()})\n")
+                                                    }
+                                                }
+                                                algorithmsInfo = "✅ Дерево решений: ответ = ${r.result}"
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED))
+                                        ) { Text("Шаг 4: ответ + путь") }
+
+                                        decisionTreePathText?.let { pathText ->
+                                            Surface(color = Color(0xFF0B1220).copy(alpha = 0.6f), shape = RoundedCornerShape(12.dp)) {
+                                                Text(
+                                                    text = pathText,
+                                                    color = Color(0xFFE5E7EB),
+                                                    fontSize = 11.sp,
+                                                    modifier = Modifier.padding(10.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            confirmButton = {
+                                TextButton(onClick = { showDecisionTreeMenu = false }) { Text("Закрыть") }
+                            }
+                        )
+                    }
                 }
             }
-        } catch (e: Exception) {
-            Log.e("MainActivity", "Error: ${e.message}", e)
-        }
     }
 
-    private fun addAllGoods() {
+    private fun addAllGoods(placeStorage: PlaceStorage) {
         placeStorage.addPlace(
             Place(
                 id = 1,
@@ -742,13 +1264,6 @@ class MainActivity : ComponentActivity() {
 
         Log.d("PLACES", "Все места: ${placeStorage.places}")
         Log.d("GOODS", "Все товары: ${placeStorage.goods}")
-    }
-
-    private fun addPlaceMarkers() {
-        markerManager.clearMarkers()
-        placeStorage.places.forEach { place ->
-            markerManager.addPlaceMarker(place)
-        }
     }
 
     private fun isPlaceOpenNow(place: Place, now: LocalTime = LocalTime.now()): Boolean {

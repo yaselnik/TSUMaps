@@ -11,6 +11,8 @@ import com.example.tsumaps.domain.models.Point
 import com.example.tsumaps.domain.models.Place
 import com.example.tsumaps.domain.models.UserRequest
 import java.time.LocalTime
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class PathManager(private val mapGrid: MapGrid) {
 
@@ -124,24 +126,41 @@ class PathManager(private val mapGrid: MapGrid) {
         }
     }
 
-    fun buildPath(): Boolean {
-        return when (mode) {
-            "simple" -> buildSimplePath()
-            "goods" -> buildGoodsPath()
-            else -> false
+    suspend fun buildPath(): Boolean {
+        val modeSnapshot = mode
+        val s = startPoint
+        val e = endPoint
+        val required = requiredGoods
+        val placesSnapshot = availablePlaces
+        val algorithmSnapshot = selectedAlgorithm
+
+        val computed = withContext(Dispatchers.Default) {
+            when (modeSnapshot) {
+                "simple" -> computeSimplePath(s, e)
+                "goods" -> computeGoodsPath(s, required, placesSnapshot, algorithmSnapshot)
+                else -> ComputationResult(null, "❌ Неизвестный режим", false)
+            }
+        }
+
+        return withContext(Dispatchers.Main) {
+            path = computed.path
+            message = computed.message
+            computed.success
         }
     }
 
-    fun buildPathToPlace(place: Place): Boolean {
+    suspend fun buildPathToPlace(place: Place): Boolean {
         val s = startPoint ?: run {
             message = "❌ Сначала выбери стартовую точку двойным тапом"
             return false
         }
 
-        val destination = if (mapGrid.isWalkable(place.location)) {
-            place.location
-        } else {
-            mapGrid.findNearestWalkable(place.location, maxRadius = 50)
+        val destination = withContext(Dispatchers.Default) {
+            if (mapGrid.isWalkable(place.location)) {
+                place.location
+            } else {
+                mapGrid.findNearestWalkable(place.location, maxRadius = 50)
+            }
         } ?: run {
             message = "❌ У магазина нет доступной проходимой точки рядом"
             return false
@@ -150,7 +169,10 @@ class PathManager(private val mapGrid: MapGrid) {
         mode = "simple"
         endPoint = destination
 
-        val result = Astar(mapGrid).findPath(s, destination)
+        val result = withContext(Dispatchers.Default) {
+            Astar(mapGrid).findPath(s, destination)
+        }
+
         return if (result.isNotEmpty()) {
             path = result
             message = "✅ Путь до «${place.name}» построен\nДлина: ${result.size} точек"
@@ -162,73 +184,69 @@ class PathManager(private val mapGrid: MapGrid) {
         }
     }
 
-    private fun buildSimplePath(): Boolean {
-        val s = startPoint ?: run {
-            message = "❌ Сначала поставь точку 1"
-            return false
-        }
-        val e = endPoint ?: run {
-            message = "❌ Сначала поставь точку 2"
-            return false
+    private data class ComputationResult(
+        val path: List<Point>?,
+        val message: String,
+        val success: Boolean
+    )
+
+    private fun computeSimplePath(
+        s: Point?,
+        e: Point?
+    ): ComputationResult {
+        val start = s ?: return ComputationResult(null, "❌ Сначала поставь точку 1", false)
+        val end = e ?: return ComputationResult(null, "❌ Сначала поставь точку 2", false)
+
+        if (!mapGrid.isWalkable(start)) {
+            return ComputationResult(null, "❌ Точка 1 в непроходимой зоне", false)
         }
 
-        if (!mapGrid.isWalkable(s)) {
-            message = "❌ Точка 1 в непроходимой зоне"
-            return false
+        if (!mapGrid.isWalkable(end)) {
+            return ComputationResult(null, "❌ Точка 2 в непроходимой зоне", false)
         }
 
-        if (!mapGrid.isWalkable(e)) {
-            message = "❌ Точка 2 в непроходимой зоне"
-            return false
-        }
-
-        Log.d("PathManager", "Поиск пути A*: $s -> $e")
-        val result = Astar(mapGrid).findPath(s, e)
+        Log.d("PathManager", "Поиск пути A*: $start -> $end")
+        val result = Astar(mapGrid).findPath(start, end)
 
         return if (result != null) {
-            path = result
-            message = "✅ Путь найден!\nДлина: ${result.size} точек"
-            true
+            ComputationResult(result, "✅ Путь найден!\nДлина: ${result.size} точек", true)
         } else {
-            path = null
-            message = "❌ Путь не найден\nТочки недостижимы"
-            false
+            ComputationResult(null, "❌ Путь не найден\nТочки недостижимы", false)
         }
     }
 
-    private fun buildGoodsPath(): Boolean {
-        val s = startPoint ?: run {
-            message = "❌ Сначала поставь стартовую точку"
-            return false
+    private fun computeGoodsPath(
+        s: Point?,
+        required: Set<String>,
+        places: Map<Int, Place>,
+        algorithm: SearchAlgorithm
+    ): ComputationResult {
+        val start = s ?: return ComputationResult(null, "❌ Сначала поставь стартовую точку", false)
+
+        if (required.isEmpty()) {
+            return ComputationResult(null, "❌ Не выбраны нужные товары", false)
         }
 
-        if (requiredGoods.isEmpty()) {
-            message = "❌ Не выбраны нужные товары"
-            return false
+        if (places.isEmpty()) {
+            return ComputationResult(null, "❌ Нет доступных магазинов", false)
         }
 
-        if (availablePlaces.isEmpty()) {
-            message = "❌ Нет доступных магазинов"
-            return false
-        }
-
-        val relevantPlaces = availablePlaces.filter { (_, place) ->
-            place.menu.any { requiredGoods.contains(it) }
+        val relevantPlaces = places.filter { (_, place) ->
+            place.menu.any { required.contains(it) }
         }
 
         if (relevantPlaces.isEmpty()) {
-            message = "❌ Нет магазинов с нужными товарами"
-            return false
+            return ComputationResult(null, "❌ Нет магазинов с нужными товарами", false)
         }
 
-        Log.d("PathManager", "Поиск маршрута через ${relevantPlaces.size} магазинов. Алгоритм: $selectedAlgorithm")
+        Log.d("PathManager", "Поиск маршрута через ${relevantPlaces.size} магазинов. Алгоритм: $algorithm")
 
-        val bestRoute = when (selectedAlgorithm) {
-            SearchAlgorithm.Astar -> buildGreedyRouteByAstar(s, relevantPlaces, requiredGoods)
+        val bestRoute = when (algorithm) {
+            SearchAlgorithm.Astar -> buildGreedyRouteByAstar(start, relevantPlaces, required)
             SearchAlgorithm.GenericAlgorithm -> {
-                val userRequest = UserRequest(choice = requiredGoods)
+                val userRequest = UserRequest(choice = required)
                 val geneticAlgorithm = GenericAlgorithm(
-                    startPoint = s,
+                    startPoint = start,
                     places = relevantPlaces.toMutableMap(),
                     request = userRequest,
                     grid = mapGrid,
@@ -241,18 +259,18 @@ class PathManager(private val mapGrid: MapGrid) {
                 geneticAlgorithm.evolve()
             }
         }
+
         Log.d("PathManager", "Route ids: $bestRoute")
 
         return if (bestRoute.isNotEmpty()) {
-            val fullPath = buildFullPath(s, bestRoute, relevantPlaces)
-            path = fullPath
-            message = "✅ Маршрут найден (${selectedAlgorithm.name})!\nЧерез ${bestRoute.size} магазинов\n" +
-                    "Собрано товаров: ${requiredGoods.size}"
-            true
+            val fullPath = buildFullPath(start, bestRoute, relevantPlaces)
+            ComputationResult(
+                fullPath,
+                "✅ Маршрут найден (${algorithm.name})!\nЧерез ${bestRoute.size} магазинов\nСобрано товаров: ${required.size}",
+                true
+            )
         } else {
-            path = null
-            message = "❌ Не удалось найти оптимальный маршрут"
-            false
+            ComputationResult(null, "❌ Не удалось найти оптимальный маршрут", false)
         }
     }
 
