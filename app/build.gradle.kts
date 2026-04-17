@@ -11,6 +11,10 @@ android {
         }
     }
 
+    aaptOptions {
+        noCompress.add("tflite")
+    }
+
     defaultConfig {
         applicationId = "com.example.tsumaps"
         minSdk = 26
@@ -48,6 +52,7 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
+    implementation("org.tensorflow:tensorflow-lite-task-vision:0.4.4")
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
