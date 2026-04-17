@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -61,6 +60,7 @@ import com.example.tsumaps.ui.dialogs.PlaceDetailDialog
 import com.example.tsumaps.ui.panel.AlgorithmExpandedContent
 import com.example.tsumaps.ui.panel.BottomControlSurface
 import com.example.tsumaps.ui.theme.TsuBrand
+import com.example.tsumaps.ui.theme.tsuHeaderButtonColors
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -406,10 +406,7 @@ fun TsuMapsApp() {
                     enabled = pm.hasTwoPoints(),
                     modifier = Modifier.width(54.dp),
                     contentPadding = PaddingValues(vertical = 8.dp, horizontal = 4.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF2E7D32),
-                        disabledContainerColor = Color(0xFF1B5E20).copy(alpha = 0.45f)
-                    )
+                    colors = tsuHeaderButtonColors()
                 ) {
                     Text("\u25B6", color = Color.White, fontSize = 15.sp)
                 }
@@ -422,9 +419,7 @@ fun TsuMapsApp() {
                         .padding(top = 6.dp)
                         .width(54.dp),
                     contentPadding = PaddingValues(vertical = 8.dp, horizontal = 4.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFFC62828)
-                    )
+                    colors = tsuHeaderButtonColors()
                 ) {
                     Text("\u21BA", color = Color.White, fontSize = 17.sp)
                 }

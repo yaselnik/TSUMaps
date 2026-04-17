@@ -5,10 +5,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -17,6 +15,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.tsumaps.ui.theme.tsuHeaderButtonColors
 
 @Composable
 fun ClusteringDialog(
@@ -46,11 +45,11 @@ fun ClusteringDialog(
         confirmButton = {
             Button(
                 onClick = { onRun(k) },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0EA5E9))
+                colors = tsuHeaderButtonColors()
             ) { Text("Запустить") }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Отмена") }
+            Button(onClick = onDismiss, colors = tsuHeaderButtonColors()) { Text("Отмена") }
         }
     )
 }

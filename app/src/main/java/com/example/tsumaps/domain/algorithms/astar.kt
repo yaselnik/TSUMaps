@@ -17,7 +17,8 @@ class Astar(val grid: MapGrid) {
 
     fun calculatePath(start: Point?, end: Point?): Double {
         val cellPath = findCellPath(start, end)
-        if (cellPath.size < 2) return 0.0
+        if (cellPath.isEmpty()) return Double.MAX_VALUE
+        if (cellPath.size == 1) return 0.0
         val scale = grid.pathScale.coerceAtLeast(1).toDouble()
         var dist = 0.0
         for (i in 0 until cellPath.size - 1) {

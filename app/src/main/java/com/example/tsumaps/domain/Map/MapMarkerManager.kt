@@ -41,6 +41,7 @@ import com.example.tsumaps.domain.models.Attraction
 import com.example.tsumaps.domain.models.Place
 import com.example.tsumaps.domain.models.Point
 import com.example.tsumaps.R
+import com.example.tsumaps.ui.theme.tsuHeaderButtonColors
 import kotlin.math.hypot
 import kotlin.math.pow
 import kotlin.math.roundToInt
@@ -422,7 +423,8 @@ fun MapWithMarkers(
                         zoom = newZoom
                         offset = clampOffset(offset, zoom)
                     },
-                    modifier = Modifier.width(54.dp)
+                    modifier = Modifier.width(54.dp),
+                    colors = tsuHeaderButtonColors()
                 ) {
                     Text("+")
                 }
@@ -434,7 +436,8 @@ fun MapWithMarkers(
                     },
                     modifier = Modifier
                         .padding(top = 6.dp)
-                        .width(54.dp)
+                        .width(54.dp),
+                    colors = tsuHeaderButtonColors()
                 ) {
                     Text("-")
                 }

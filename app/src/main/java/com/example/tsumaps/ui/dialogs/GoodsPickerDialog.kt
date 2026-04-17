@@ -8,7 +8,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -18,7 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.tsumaps.ui.theme.TsuBrand
+import com.example.tsumaps.ui.theme.tsuHeaderButtonColors
 
 @Composable
 fun GoodsPickerDialog(
@@ -47,9 +46,7 @@ fun GoodsPickerDialog(
                 )
                 Button(
                     onClick = onClearSelection,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF334155)
-                    )
+                    colors = tsuHeaderButtonColors()
                 ) {
                     Text("Очистить выбор")
                 }
@@ -84,9 +81,7 @@ fun GoodsPickerDialog(
         confirmButton = {
             Button(
                 onClick = onApply,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = TsuBrand.AccentBlue
-                )
+                colors = tsuHeaderButtonColors()
             ) {
                 Text("Применить")
             }
@@ -94,9 +89,7 @@ fun GoodsPickerDialog(
         dismissButton = {
             Button(
                 onClick = onDismiss,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF334155)
-                )
+                colors = tsuHeaderButtonColors()
             ) {
                 Text("Отмена")
             }

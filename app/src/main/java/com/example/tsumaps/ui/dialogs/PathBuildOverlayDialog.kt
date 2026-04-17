@@ -40,7 +40,7 @@ fun PathBuildOverlayDialog(
             ) {
                 CircularProgressIndicator(
                     modifier = Modifier.size(40.dp),
-                    color = TsuBrand.AccentBlue,
+                    color = TsuBrand.Header,
                     strokeWidth = 3.dp
                 )
                 Spacer(modifier = Modifier.width(12.dp))

@@ -13,11 +13,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -35,6 +33,7 @@ import com.example.tsumaps.domain.algorithms.decisionTree.DecisionTree
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.example.tsumaps.ui.theme.tsuHeaderButtonColors
 
 @Composable
 fun DecisionTreeMenuDialog(
@@ -113,7 +112,7 @@ fun DecisionTreeMenuDialog(
                         Button(
                             onClick = onPickCsvFile,
                             modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF334155))
+                            colors = tsuHeaderButtonColors()
                         ) { Text("Выбрать файл") }
                         Button(
                             onClick = {
@@ -128,7 +127,7 @@ fun DecisionTreeMenuDialog(
                                 }
                             },
                             modifier = Modifier.weight(1f),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF475569))
+                            colors = tsuHeaderButtonColors()
                         ) { Text("По умолчанию") }
                     }
 
@@ -145,7 +144,7 @@ fun DecisionTreeMenuDialog(
                     Button(
                         onClick = { scope.launch { onBuildTree() } },
                         modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED))
+                        colors = tsuHeaderButtonColors()
                     ) { Text("Шаг 2: построить дерево") }
 
                     decisionTreeBuiltText?.let { treeText ->
@@ -197,7 +196,7 @@ fun DecisionTreeMenuDialog(
                                 }
                             },
                             modifier = Modifier.fillMaxWidth(),
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED))
+                            colors = tsuHeaderButtonColors()
                         ) { Text("Шаг 4: ответ + путь") }
 
                         decisionTreePathText?.let { pathText ->
@@ -219,7 +218,7 @@ fun DecisionTreeMenuDialog(
                     horizontalArrangement = Arrangement.End,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    TextButton(onClick = onDismiss) {
+                    Button(onClick = onDismiss, colors = tsuHeaderButtonColors()) {
                         Text("Закрыть")
                     }
                 }

@@ -16,7 +16,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -32,6 +31,7 @@ import com.example.tsumaps.domain.path.PathManager
 import com.example.tsumaps.ui.getPlaceTimingInfo
 import com.example.tsumaps.ui.isPlaceOpenNow
 import com.example.tsumaps.ui.theme.TsuBrand
+import com.example.tsumaps.ui.theme.tsuHeaderButtonColors
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -82,9 +82,7 @@ fun BottomControlSurface(
                 )
                 Button(
                     onClick = onToggleBottomPanel,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF374151)
-                    )
+                    colors = tsuHeaderButtonColors()
                 ) {
                     Text(if (isBottomPanelExpanded) "▼" else "▲")
                 }
@@ -136,7 +134,7 @@ fun AlgorithmExpandedContent(
                     }
                 },
                 modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4B5563))
+                colors = tsuHeaderButtonColors()
             ) { Text("A*") }
             Button(
                 onClick = {
@@ -148,23 +146,23 @@ fun AlgorithmExpandedContent(
                     }
                 },
                 modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(containerColor = TsuBrand.AccentBlue)
+                colors = tsuHeaderButtonColors()
             ) { Text("Генетический алгоритм") }
         }
 
         Button(
             onClick = onOpenDecisionTree,
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7C3AED))
+            colors = tsuHeaderButtonColors()
         ) { Text("Дерево решений — куда пойти поесть") }
 
         Button(
             onClick = onOpenClustering,
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0EA5E9))
+            colors = tsuHeaderButtonColors()
         ) { Text("Кластеризация — зоны еды") }
 
         Button(
             onClick = onOpenAco,
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF16A34A))
+            colors = tsuHeaderButtonColors()
         ) { Text("Муравьиный алгоритм — TSP") }
 
         if (algorithmsInfo != null) {
@@ -199,9 +197,7 @@ fun AlgorithmExpandedContent(
                     onClick = {
                         scope.launch { pm.clearGoodsRequest() }
                     },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF4B5563)
-                    )
+                    colors = tsuHeaderButtonColors()
                 ) {
                     Text("Сброс товаров")
                 }

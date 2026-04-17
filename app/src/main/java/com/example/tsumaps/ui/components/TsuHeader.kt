@@ -47,7 +47,7 @@ fun TsuHeader(
                 Image(
                     painter = painterResource(R.drawable.ic_tsu_logo),
                     contentDescription = "Символика ТГУ",
-                    modifier = Modifier.size(42.dp)
+                    modifier = Modifier.size(72.dp)
                 )
                 Column(Modifier.padding(start = 12.dp)) {
                     Text(
