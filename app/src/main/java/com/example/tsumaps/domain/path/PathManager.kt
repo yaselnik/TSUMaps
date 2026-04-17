@@ -7,12 +7,13 @@ import androidx.compose.runtime.setValue
 import com.example.tsumaps.domain.algorithms.Astar
 import com.example.tsumaps.domain.algorithms.GenericAlgorithm
 import com.example.tsumaps.domain.map.MapGrid
-import com.example.tsumaps.domain.models.Point
 import com.example.tsumaps.domain.models.Place
+import com.example.tsumaps.domain.models.Point
 import com.example.tsumaps.domain.models.UserRequest
-import java.time.LocalTime
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.yield
 
 class PathManager(private val mapGrid: MapGrid) {
 
@@ -30,7 +31,7 @@ class PathManager(private val mapGrid: MapGrid) {
     var path by mutableStateOf<List<Point>?>(null)
         private set
 
-    var message by mutableStateOf("Двойной тап: поставь 2 точки")
+    var message by mutableStateOf("\u0414\u0432\u043E\u0439\u043D\u043E\u0439 \u0442\u0430\u043F: \u043F\u043E\u0441\u0442\u0430\u0432\u044C 2 \u0442\u043E\u0447\u043A\u0438")
         private set
 
     var mode by mutableStateOf("simple")
@@ -47,27 +48,37 @@ class PathManager(private val mapGrid: MapGrid) {
 
     fun setSearchAlgorithm(algorithm: SearchAlgorithm) {
         selectedAlgorithm = algorithm
-        message = "Алгоритм: ${algorithm.name}\n${baseModeHint()}"
+        message = "\u0410\u043B\u0433\u043E\u0440\u0438\u0442\u043C: ${algorithm.name}\n${baseModeHint()}"
     }
 
     fun setGoodsRequest(goods: Set<String>) {
         requiredGoods = goods
         mode = "goods"
         reset()
-        message = "✅ Поиск магазинов с: ${goods.joinToString()}\nДвойной тап для старта"
+        message = "\u041F\u043E\u0438\u0441\u043A \u043C\u0430\u0433\u0430\u0437\u0438\u043D\u043E\u0432 \u0441: ${goods.joinToString()}\n\u0414\u0432\u043E\u0439\u043D\u043E\u0439 \u0442\u0430\u043F \u0434\u043B\u044F \u0441\u0442\u0430\u0440\u0442\u0430"
+    }
+
+    fun enterGoodsMode() {
+        mode = "goods"
+        reset()
+        message = if (requiredGoods.isEmpty()) {
+            "\u0412\u044B\u0431\u0435\u0440\u0438 \u0442\u043E\u0432\u0430\u0440\u044B \u0438 \u043F\u043E\u0441\u0442\u0430\u0432\u044C \u0441\u0442\u0430\u0440\u0442\u043E\u0432\u0443\u044E \u0442\u043E\u0447\u043A\u0443"
+        } else {
+            "\u0422\u043E\u0432\u0430\u0440\u044B: ${requiredGoods.joinToString()}\n\u0414\u0432\u043E\u0439\u043D\u043E\u0439 \u0442\u0430\u043F \u0434\u043B\u044F \u0441\u0442\u0430\u0440\u0442\u0430"
+        }
     }
 
     fun clearGoodsRequest() {
         requiredGoods = emptySet()
         mode = "simple"
         reset()
-        message = "Выбор товаров очищен.\nДвойной тап: поставь 2 точки"
+        message = "\u0412\u044B\u0431\u043E\u0440 \u0442\u043E\u0432\u0430\u0440\u043E\u0432 \u043E\u0447\u0438\u0449\u0435\u043D.\n\u0414\u0432\u043E\u0439\u043D\u043E\u0439 \u0442\u0430\u043F: \u043F\u043E\u0441\u0442\u0430\u0432\u044C 2 \u0442\u043E\u0447\u043A\u0438"
     }
 
     fun setSimpleMode() {
         mode = "simple"
         reset()
-        message = "Двойной тап: поставь 2 точки"
+        message = "\u0414\u0432\u043E\u0439\u043D\u043E\u0439 \u0442\u0430\u043F: \u043F\u043E\u0441\u0442\u0430\u0432\u044C 2 \u0442\u043E\u0447\u043A\u0438"
     }
 
     fun updatePlaces(places: Map<Int, Place>) {
@@ -84,7 +95,7 @@ class PathManager(private val mapGrid: MapGrid) {
         }
 
         if (walkablePoint == null) {
-            message = "⚠️ Точка в непроходимой области!\nПопробуй выбрать другое место"
+            message = "\u0422\u043E\u0447\u043A\u0430 \u0432 \u043D\u0435\u043F\u0440\u043E\u0445\u043E\u0434\u0438\u043C\u043E\u0439 \u043E\u0431\u043B\u0430\u0441\u0442\u0438.\n\u041F\u043E\u043F\u0440\u043E\u0431\u0443\u0439 \u0432\u044B\u0431\u0440\u0430\u0442\u044C \u0434\u0440\u0443\u0433\u043E\u0435 \u043C\u0435\u0441\u0442\u043E"
             return
         }
 
@@ -99,17 +110,19 @@ class PathManager(private val mapGrid: MapGrid) {
             startPoint == null -> {
                 startPoint = walkablePoint
                 path = null
-                message = "✅ Точка 1 установлена\nТеперь выбери точку 2"
+                message = "\u0422\u043E\u0447\u043A\u0430 1 \u0443\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D\u0430\n\u0422\u0435\u043F\u0435\u0440\u044C \u0432\u044B\u0431\u0435\u0440\u0438 \u0442\u043E\u0447\u043A\u0443 2"
             }
+
             endPoint == null -> {
                 endPoint = walkablePoint
                 path = null
-                message = "✅ Точка 2 установлена\nНажми «Запустить»"
+                message = "\u0422\u043E\u0447\u043A\u0430 2 \u0443\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D\u0430\n\u041D\u0430\u0436\u043C\u0438 \u00AB\u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C\u00BB"
             }
+
             else -> {
                 reset()
                 startPoint = walkablePoint
-                message = "✅ Точка 1 установлена\nТеперь выбери точку 2"
+                message = "\u0422\u043E\u0447\u043A\u0430 1 \u0443\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D\u0430\n\u0422\u0435\u043F\u0435\u0440\u044C \u0432\u044B\u0431\u0435\u0440\u0438 \u0442\u043E\u0447\u043A\u0443 2"
             }
         }
     }
@@ -118,27 +131,27 @@ class PathManager(private val mapGrid: MapGrid) {
         if (startPoint == null) {
             startPoint = walkablePoint
             path = null
-            message = "✅ Стартовая точка установлена\nНажми «Запустить» для поиска маршрута по товарам"
+            message = "\u0421\u0442\u0430\u0440\u0442\u043E\u0432\u0430\u044F \u0442\u043E\u0447\u043A\u0430 \u0443\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D\u0430\n\u041D\u0430\u0436\u043C\u0438 \u00AB\u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C\u00BB \u0434\u043B\u044F \u043F\u043E\u0438\u0441\u043A\u0430 \u043C\u0430\u0440\u0448\u0440\u0443\u0442\u0430 \u043F\u043E \u0442\u043E\u0432\u0430\u0440\u0430\u043C"
         } else {
             reset()
             startPoint = walkablePoint
-            message = "✅ Стартовая точка обновлена\nНажми «Запустить» для поиска маршрута"
+            message = "\u0421\u0442\u0430\u0440\u0442\u043E\u0432\u0430\u044F \u0442\u043E\u0447\u043A\u0430 \u043E\u0431\u043D\u043E\u0432\u043B\u0435\u043D\u0430\n\u041D\u0430\u0436\u043C\u0438 \u00AB\u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C\u00BB \u0434\u043B\u044F \u043F\u043E\u0438\u0441\u043A\u0430 \u043C\u0430\u0440\u0448\u0440\u0443\u0442\u0430"
         }
     }
 
     suspend fun buildPath(): Boolean {
         val modeSnapshot = mode
-        val s = startPoint
-        val e = endPoint
-        val required = requiredGoods
+        val startSnapshot = startPoint
+        val endSnapshot = endPoint
+        val requiredSnapshot = requiredGoods
         val placesSnapshot = availablePlaces
         val algorithmSnapshot = selectedAlgorithm
 
         val computed = withContext(Dispatchers.Default) {
             when (modeSnapshot) {
-                "simple" -> computeSimplePath(s, e)
-                "goods" -> computeGoodsPath(s, required, placesSnapshot, algorithmSnapshot)
-                else -> ComputationResult(null, "❌ Неизвестный режим", false)
+                "simple" -> computeSimplePath(startSnapshot, endSnapshot)
+                "goods" -> computeGoodsPath(startSnapshot, requiredSnapshot, placesSnapshot, algorithmSnapshot)
+                else -> ComputationResult(null, "\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u044B\u0439 \u0440\u0435\u0436\u0438\u043C", false)
             }
         }
 
@@ -149,9 +162,13 @@ class PathManager(private val mapGrid: MapGrid) {
         }
     }
 
+    fun notifyPathBuildCancelled() {
+        message = "\u041F\u043E\u0441\u0442\u0440\u043E\u0435\u043D\u0438\u0435 \u043C\u0430\u0440\u0448\u0440\u0443\u0442\u0430 \u043E\u0442\u043C\u0435\u043D\u0435\u043D\u043E"
+    }
+
     suspend fun buildPathToPlace(place: Place): Boolean {
-        val s = startPoint ?: run {
-            message = "❌ Сначала выбери стартовую точку двойным тапом"
+        val start = startPoint ?: run {
+            message = "\u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u0432\u044B\u0431\u0435\u0440\u0438 \u0441\u0442\u0430\u0440\u0442\u043E\u0432\u0443\u044E \u0442\u043E\u0447\u043A\u0443 \u0434\u0432\u043E\u0439\u043D\u044B\u043C \u0442\u0430\u043F\u043E\u043C"
             return false
         }
 
@@ -162,7 +179,7 @@ class PathManager(private val mapGrid: MapGrid) {
                 mapGrid.findNearestWalkable(place.location, maxRadius = 50)
             }
         } ?: run {
-            message = "❌ У магазина нет доступной проходимой точки рядом"
+            message = "\u0423 \u043C\u0435\u0441\u0442\u0430 \u043D\u0435\u0442 \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u043E\u0439 \u043F\u0440\u043E\u0445\u043E\u0434\u0438\u043C\u043E\u0439 \u0442\u043E\u0447\u043A\u0438 \u0440\u044F\u0434\u043E\u043C"
             return false
         }
 
@@ -170,16 +187,16 @@ class PathManager(private val mapGrid: MapGrid) {
         endPoint = destination
 
         val result = withContext(Dispatchers.Default) {
-            Astar(mapGrid).findPath(s, destination)
+            Astar(mapGrid).findPath(start, destination)
         }
 
         return if (result.isNotEmpty()) {
             path = result
-            message = "✅ Путь до «${place.name}» построен\nДлина: ${result.size} точек"
+            message = "\u041F\u0443\u0442\u044C \u0434\u043E \u00AB${place.name}\u00BB \u043F\u043E\u0441\u0442\u0440\u043E\u0435\u043D\n\u0414\u043B\u0438\u043D\u0430: ${result.size} \u0442\u043E\u0447\u0435\u043A"
             true
         } else {
             path = null
-            message = "❌ Не удалось построить путь до «${place.name}»"
+            message = "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043F\u043E\u0441\u0442\u0440\u043E\u0438\u0442\u044C \u043F\u0443\u0442\u044C \u0434\u043E \u00AB${place.name}\u00BB"
             false
         }
     }
@@ -190,45 +207,42 @@ class PathManager(private val mapGrid: MapGrid) {
         val success: Boolean
     )
 
-    private fun computeSimplePath(
-        s: Point?,
-        e: Point?
-    ): ComputationResult {
-        val start = s ?: return ComputationResult(null, "❌ Сначала поставь точку 1", false)
-        val end = e ?: return ComputationResult(null, "❌ Сначала поставь точку 2", false)
+    private fun computeSimplePath(start: Point?, end: Point?): ComputationResult {
+        val safeStart = start ?: return ComputationResult(null, "\u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u043F\u043E\u0441\u0442\u0430\u0432\u044C \u0442\u043E\u0447\u043A\u0443 1", false)
+        val safeEnd = end ?: return ComputationResult(null, "\u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u043F\u043E\u0441\u0442\u0430\u0432\u044C \u0442\u043E\u0447\u043A\u0443 2", false)
 
-        if (!mapGrid.isWalkable(start)) {
-            return ComputationResult(null, "❌ Точка 1 в непроходимой зоне", false)
+        if (!mapGrid.isWalkable(safeStart)) {
+            return ComputationResult(null, "\u0422\u043E\u0447\u043A\u0430 1 \u0432 \u043D\u0435\u043F\u0440\u043E\u0445\u043E\u0434\u0438\u043C\u043E\u0439 \u0437\u043E\u043D\u0435", false)
         }
 
-        if (!mapGrid.isWalkable(end)) {
-            return ComputationResult(null, "❌ Точка 2 в непроходимой зоне", false)
+        if (!mapGrid.isWalkable(safeEnd)) {
+            return ComputationResult(null, "\u0422\u043E\u0447\u043A\u0430 2 \u0432 \u043D\u0435\u043F\u0440\u043E\u0445\u043E\u0434\u0438\u043C\u043E\u0439 \u0437\u043E\u043D\u0435", false)
         }
 
-        Log.d("PathManager", "Поиск пути A*: $start -> $end")
-        val result = Astar(mapGrid).findPath(start, end)
+        Log.d("PathManager", "A* path search: $safeStart -> $safeEnd")
+        val result = Astar(mapGrid).findPath(safeStart, safeEnd)
 
-        return if (result != null) {
-            ComputationResult(result, "✅ Путь найден!\nДлина: ${result.size} точек", true)
+        return if (result.isNotEmpty()) {
+            ComputationResult(result, "\u041F\u0443\u0442\u044C \u043D\u0430\u0439\u0434\u0435\u043D\n\u0414\u043B\u0438\u043D\u0430: ${result.size} \u0442\u043E\u0447\u0435\u043A", true)
         } else {
-            ComputationResult(null, "❌ Путь не найден\nТочки недостижимы", false)
+            ComputationResult(null, "\u041F\u0443\u0442\u044C \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D\n\u0422\u043E\u0447\u043A\u0438 \u043D\u0435\u0434\u043E\u0441\u0442\u0438\u0436\u0438\u043C\u044B", false)
         }
     }
 
-    private fun computeGoodsPath(
-        s: Point?,
+    private suspend fun computeGoodsPath(
+        start: Point?,
         required: Set<String>,
         places: Map<Int, Place>,
         algorithm: SearchAlgorithm
     ): ComputationResult {
-        val start = s ?: return ComputationResult(null, "❌ Сначала поставь стартовую точку", false)
+        val safeStart = start ?: return ComputationResult(null, "\u0421\u043D\u0430\u0447\u0430\u043B\u0430 \u043F\u043E\u0441\u0442\u0430\u0432\u044C \u0441\u0442\u0430\u0440\u0442\u043E\u0432\u0443\u044E \u0442\u043E\u0447\u043A\u0443", false)
 
         if (required.isEmpty()) {
-            return ComputationResult(null, "❌ Не выбраны нужные товары", false)
+            return ComputationResult(null, "\u041D\u0435 \u0432\u044B\u0431\u0440\u0430\u043D\u044B \u043D\u0443\u0436\u043D\u044B\u0435 \u0442\u043E\u0432\u0430\u0440\u044B", false)
         }
 
         if (places.isEmpty()) {
-            return ComputationResult(null, "❌ Нет доступных магазинов", false)
+            return ComputationResult(null, "\u041D\u0435\u0442 \u0434\u043E\u0441\u0442\u0443\u043F\u043D\u044B\u0445 \u043C\u0430\u0433\u0430\u0437\u0438\u043D\u043E\u0432", false)
         }
 
         val relevantPlaces = places.filter { (_, place) ->
@@ -236,56 +250,58 @@ class PathManager(private val mapGrid: MapGrid) {
         }
 
         if (relevantPlaces.isEmpty()) {
-            return ComputationResult(null, "❌ Нет магазинов с нужными товарами", false)
+            return ComputationResult(null, "\u041D\u0435\u0442 \u043C\u0430\u0433\u0430\u0437\u0438\u043D\u043E\u0432 \u0441 \u043D\u0443\u0436\u043D\u044B\u043C\u0438 \u0442\u043E\u0432\u0430\u0440\u0430\u043C\u0438", false)
         }
 
-        Log.d("PathManager", "Поиск маршрута через ${relevantPlaces.size} магазинов. Алгоритм: $algorithm")
-
         val bestRoute = when (algorithm) {
-            SearchAlgorithm.Astar -> buildGreedyRouteByAstar(start, relevantPlaces, required)
+            SearchAlgorithm.Astar -> buildGreedyRouteByAstar(safeStart, relevantPlaces, required)
             SearchAlgorithm.GenericAlgorithm -> {
-                val userRequest = UserRequest(choice = required)
-                val geneticAlgorithm = GenericAlgorithm(
-                    startPoint = start,
-                    places = relevantPlaces.toMutableMap(),
-                    request = userRequest,
-                    grid = mapGrid,
-                    populationSize = 100,
-                    generations = 200,
-                    tournamentSize = 5,
-                    mutationRate = 0.2,
-                    elitismCount = 5
-                )
-                geneticAlgorithm.evolve()
+                try {
+                    val userRequest = UserRequest(choice = required)
+                    GenericAlgorithm(
+                        startPoint = safeStart,
+                        places = relevantPlaces.toMutableMap(),
+                        request = userRequest,
+                        grid = mapGrid,
+                        populationSize = 100,
+                        generations = 200,
+                        tournamentSize = 5,
+                        mutationRate = 0.2,
+                        elitismCount = 5
+                    ).evolve()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.e("PathManager", "Genetic algorithm failed", e)
+                    return ComputationResult(
+                        null,
+                        "\u041e\u0448\u0438\u0431\u043a\u0430 \u0433\u0435\u043d\u0435\u0442\u0438\u0447\u0435\u0441\u043a\u043e\u0433\u043e \u0430\u043b\u0433\u043e\u0440\u0438\u0442\u043c\u0430: ${e.message ?: ""}",
+                        false
+                    )
+                }
             }
         }
 
-        Log.d("PathManager", "Route ids: $bestRoute")
-
         return if (bestRoute.isNotEmpty()) {
-            val fullPath = buildFullPath(start, bestRoute, relevantPlaces)
+            val fullPath = buildFullPath(safeStart, bestRoute, relevantPlaces)
             ComputationResult(
                 fullPath,
-                "✅ Маршрут найден (${algorithm.name})!\nЧерез ${bestRoute.size} магазинов\nСобрано товаров: ${required.size}",
+                "\u041C\u0430\u0440\u0448\u0440\u0443\u0442 \u043D\u0430\u0439\u0434\u0435\u043D (${algorithm.name})\n\u0427\u0435\u0440\u0435\u0437 ${bestRoute.size} \u043C\u0430\u0433\u0430\u0437\u0438\u043D\u043E\u0432\n\u0421\u043E\u0431\u0440\u0430\u043D\u043E \u0442\u043E\u0432\u0430\u0440\u043E\u0432: ${required.size}",
                 true
             )
         } else {
-            ComputationResult(null, "❌ Не удалось найти оптимальный маршрут", false)
+            ComputationResult(null, "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u043D\u0430\u0439\u0442\u0438 \u043E\u043F\u0442\u0438\u043C\u0430\u043B\u044C\u043D\u044B\u0439 \u043C\u0430\u0440\u0448\u0440\u0443\u0442", false)
         }
     }
 
-    private fun buildFullPath(
-        start: Point,
-        route: List<Int>,
-        places: Map<Int, Place>
-    ): List<Point> {
+    private fun buildFullPath(start: Point, route: List<Int>, places: Map<Int, Place>): List<Point> {
         val fullPath = mutableListOf<Point>()
         var currentPoint = start
 
         for (placeId in route) {
             val targetPoint = places[placeId]?.location ?: continue
             val segment = Astar(mapGrid).findPath(currentPoint, targetPoint)
-            if (segment != null) {
+            if (segment.isNotEmpty()) {
                 if (fullPath.isEmpty()) {
                     fullPath.addAll(segment)
                 } else {
@@ -298,12 +314,24 @@ class PathManager(private val mapGrid: MapGrid) {
         return fullPath
     }
 
+    fun setExternalTourPath(polyline: List<Point>, caption: String) {
+        if (polyline.isEmpty()) {
+            path = null
+            message = caption
+            return
+        }
+        path = polyline
+        startPoint = polyline.first()
+        endPoint = polyline.last()
+        message = caption
+    }
+
     fun reset() {
         startPoint = null
         endPoint = null
         path = null
         message = baseModeHint()
-        Log.d("PathManager", "Сброс всех точек")
+        Log.d("PathManager", "Reset points")
     }
 
     fun hasTwoPoints(): Boolean = when (mode) {
@@ -314,13 +342,13 @@ class PathManager(private val mapGrid: MapGrid) {
 
     private fun baseModeHint(): String {
         return if (mode == "simple") {
-            "Двойной тап: поставь 2 точки"
+            "\u0414\u0432\u043E\u0439\u043D\u043E\u0439 \u0442\u0430\u043F: \u043F\u043E\u0441\u0442\u0430\u0432\u044C 2 \u0442\u043E\u0447\u043A\u0438"
         } else {
-            "Двойной тап: поставь стартовую точку"
+            "\u0414\u0432\u043E\u0439\u043D\u043E\u0439 \u0442\u0430\u043F: \u043F\u043E\u0441\u0442\u0430\u0432\u044C \u0441\u0442\u0430\u0440\u0442\u043E\u0432\u0443\u044E \u0442\u043E\u0447\u043A\u0443"
         }
     }
 
-    private fun buildGreedyRouteByAstar(
+    private suspend fun buildGreedyRouteByAstar(
         start: Point,
         relevantPlaces: Map<Int, Place>,
         required: Set<String>
@@ -332,6 +360,7 @@ class PathManager(private val mapGrid: MapGrid) {
         var current = start
 
         while (remainingGoods.isNotEmpty() && unvisited.isNotEmpty()) {
+            yield()
             val next = unvisited.minByOrNull { (_, place) ->
                 val pathLen = astar.findPath(current, place.location).size
                 if (pathLen == 0) Int.MAX_VALUE else pathLen

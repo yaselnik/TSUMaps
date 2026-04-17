@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="40dp"
+    android:height="40dp"
+    android:viewportWidth="100"
+    android:viewportHeight="100">
+    <!-- Щит + буква U в стилистике фирменного знака ТГУ -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M50,6 L90,22 L90,54 C90,78 72,92 50,95 C28,92 10,78 10,54 L10,22 Z" />
+    <path
+        android:fillColor="#003D6B"
+        android:pathData="M50,18 L78,28 L78,52 C78,68 66,80 50,82 C34,80 22,68 22,52 L22,28 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M38,38 L38,54 C38,62 43,68 50,68 C57,68 62,62 62,54 L62,38 L54,38 L54,52 C54,56 52,58 50,58 C48,58 46,56 46,52 L46,38 Z" />
+</vector>

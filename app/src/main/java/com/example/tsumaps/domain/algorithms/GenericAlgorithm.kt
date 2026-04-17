@@ -1,18 +1,18 @@
 package com.example.tsumaps.domain.algorithms
 
-import androidx.compose.ui.graphics.evaluateCubic
 import com.example.tsumaps.domain.models.Place
 import com.example.tsumaps.domain.models.UserRequest
 import com.example.tsumaps.domain.models.Point
 import com.example.tsumaps.domain.map.MapGrid
 import kotlin.random.Random
+import kotlinx.coroutines.yield
 
 class GenericAlgorithm (
     private val startPoint: Point,
     private val places: MutableMap<Int, Place>,
     private val request: UserRequest,
-    private val populationSize: Int = 100,//300
-    private val generations: Int = 300,//800
+    private val populationSize: Int = 75,
+    private val generations: Int = 150,
     private val tournamentSize: Int = 5,
     private val mutationRate: Double = 0.2,
     private val elitismCount: Int = 5,
@@ -47,7 +47,9 @@ class GenericAlgorithm (
         }
     }
 
-    fun fitness(route: List<Int>) : Double {
+    fun fitness(route: List<Int>): Double {
+        if (route.isEmpty()) return 0.0
+
         var dist = 0.001
         dist += distanceFromStart[route[0]] ?: 0.0
 
@@ -55,7 +57,7 @@ class GenericAlgorithm (
             dist += distanceMatrix[Pair(route[i - 1], route[i])] ?: 0.0
         }
 
-        val covering = route.flatMap { placesToVisit[it]!!.menu }.toSet()
+        val covering = route.mapNotNull { id -> placesToVisit[id]?.menu }.flatten().toSet()
 
         val missing = request.choice.filter { !covering.contains(it) }.toSet()
 
@@ -63,10 +65,7 @@ class GenericAlgorithm (
             val penalty = missing.size * 1000.0
             return 1.0 / (dist + penalty)
         }
-        else {
-            return 1.0 / dist
-        }
-
+        return 1.0 / dist
     }
 
     fun initPopulation() : List<List<Int>> {
@@ -100,8 +99,10 @@ class GenericAlgorithm (
     }
 
     private fun tournamentSelect(population: List<List<Int>>, fitnesses: List<Double>): List<Int> {
-        val tournament = List(tournamentSize) {
-            val idx = Random.nextInt(population.size)
+        if (population.isEmpty()) return emptyList()
+        val n = population.size
+        val tournament = List(tournamentSize.coerceAtLeast(1)) {
+            val idx = Random.nextInt(n)
             population[idx] to fitnesses[idx]
         }
 
@@ -112,9 +113,16 @@ class GenericAlgorithm (
         if (parent1.isEmpty() || parent2.isEmpty() || parent1.size < 2 || parent2.size < 2) {
             return parent1.toList() to parent2.toList()
         }
-        val size = parent1.size
-        val cutPoints = (0 until size).shuffled().take(2).sorted()
-        val (start, end) = cutPoints[0] to cutPoints[1]
+        val n = minOf(parent1.size, parent2.size)
+        if (n < 2) {
+            return parent1.toList() to parent2.toList()
+        }
+        val cutPoints = (0 until n).shuffled().take(2).sorted()
+        if (cutPoints.size < 2) {
+            return parent1.toList() to parent2.toList()
+        }
+        val start = cutPoints[0]
+        val end = cutPoints[1]
 
         val child1 = mutableListOf<Int>()
         child1.addAll(parent1.subList(start, end + 1))
@@ -164,9 +172,12 @@ class GenericAlgorithm (
     private fun insertMutation(route: MutableList<Int>) {
         if (route.size < 2) return
         val from = Random.nextInt(route.size)
-        val to = Random.nextInt(route.size)
+        var to = Random.nextInt(route.size)
         val element = route.removeAt(from)
-        route.add(to, element)
+        if (from < to) {
+            to -= 1
+        }
+        route.add(to.coerceIn(0, route.size), element)
     }
 
     private fun trimRouteIfPossible(route: MutableList<Int>) {
@@ -188,7 +199,7 @@ class GenericAlgorithm (
         }
     }
 
-    fun evolve(): List<Int> {
+    suspend fun evolve(): List<Int> {
         if (placesToVisit.isEmpty()) {
             return emptyList()
         }
@@ -197,6 +208,7 @@ class GenericAlgorithm (
         var bestFitness = 0.0
 
         for (generation in 0 until generations) {
+            yield()
             val fitnesses = population.map { fitness(it) }
 
             val bestIndex = fitnesses.indices.maxByOrNull { fitnesses[it] } ?: 0
@@ -221,6 +233,7 @@ class GenericAlgorithm (
             while (newPopulation.size < populationSize) {
                 val parent1 = tournamentSelect(population, fitnesses)
                 val parent2 = tournamentSelect(population, fitnesses)
+                if (parent1.isEmpty() || parent2.isEmpty()) break
 
                 val (child1, child2) = orderCrossover(parent1, parent2)
 

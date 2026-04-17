@@ -31,15 +31,18 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.tsumaps.domain.models.Attraction
 import com.example.tsumaps.domain.models.Place
 import com.example.tsumaps.domain.models.Point
 import com.example.tsumaps.R
 import kotlin.math.hypot
+import kotlin.math.pow
 import kotlin.math.roundToInt
 import androidx.compose.ui.platform.LocalDensity
 
@@ -57,7 +60,8 @@ enum class MarkerType {
     ROAD,
     UNIVERSITY,
     VENDING,
-    SHOP
+    SHOP,
+    ATTRACTION
 }
 
 class MapMarkerManager(
@@ -90,6 +94,10 @@ class MapMarkerManager(
                 place = place
             )
         )
+    }
+
+    fun addAttractionMarker(attraction: Attraction) {
+        addMarker(attraction.marker)
     }
 
     fun addMarker(name: String, xPercent: Float, yPercent: Float, type: MarkerType) {
@@ -147,7 +155,7 @@ fun MapWithMarkers(
     fun clusterMarkers(markers: List<MapMarker>, zoomLevel: Float): List<MarkerCluster> {
         if (imageActualSize.width == 0 || imageActualSize.height == 0) return emptyList()
 
-        val clusterRadiusPx = (48f / zoomLevel.coerceAtLeast(1f)).coerceIn(14f, 48f)
+        val clusterRadiusPx = clusterRadiusForZoom(zoomLevel, maxZoom)
         val remaining = markers.toMutableList()
         val clusters = mutableListOf<MarkerCluster>()
 
@@ -305,12 +313,13 @@ fun MapWithMarkers(
                 val center = cluster.center
                 val isCluster = cluster.markers.size > 1
 
-                val sizeDp = when {
-                    isCluster -> (28 + (cluster.markers.size.coerceAtMost(9) * 2))
-                    zoom >= 2.3f -> 34
-                    else -> 28
-                }.toFloat()
-                val sizePx = dpToPx(sizeDp)
+                val layoutSizeDp = if (isCluster) {
+                    clusterBubbleLayoutDp(cluster.markers.size)
+                } else {
+                    SINGLE_MARKER_LAYOUT_DP
+                }
+                val pinVisualScale = mapPinScreenScale(zoom, maxZoom)
+                val sizePx = dpToPx(layoutSizeDp)
                 Box(
                     modifier = Modifier
                         .offset {
@@ -319,7 +328,12 @@ fun MapWithMarkers(
                                 y = (center.y - sizePx / 2f).roundToInt()
                             )
                         }
-                        .size(sizeDp.dp)
+                        .size(layoutSizeDp.dp)
+                        .graphicsLayer {
+                            scaleX = pinVisualScale
+                            scaleY = pinVisualScale
+                            transformOrigin = TransformOrigin(0.5f, 0.5f)
+                        }
                 ) {
                     if (isCluster) {
                         Surface(
@@ -333,14 +347,21 @@ fun MapWithMarkers(
                                     zoom = newZoom
                                     offset = clampOffset(Offset(targetOffsetX, targetOffsetY), zoom)
                                 },
-                            color = Color(0xFF111827).copy(alpha = 0.78f),
-                            shadowElevation = 6.dp
+                            shape = CircleShape,
+                            color = MarkerColors.clusterFill,
+                            border = BorderStroke(1.dp, MarkerColors.clusterRim),
+                            shadowElevation = markerClusterShadowDp(zoom, maxZoom)
                         ) {
-                            Box(contentAlignment = Alignment.Center) {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
                                 Text(
                                     text = cluster.markers.size.toString(),
-                                    color = Color.White,
-                                    fontSize = 12.sp,
+                                    color = MarkerColors.clusterLabel,
+                                    fontSize = clusterCountFontSp(zoom, maxZoom),
+                                    fontWeight = FontWeight.SemiBold,
+                                    letterSpacing = 0.15.sp,
                                     textAlign = TextAlign.Center
                                 )
                             }
@@ -348,10 +369,11 @@ fun MapWithMarkers(
                     } else {
                         val marker = cluster.markers.first()
                         val accent = markerAccentColor(marker)
-                        val baseColor = if (marker.type == MarkerType.SHOP) {
-                            Color.White.copy(alpha = if (zoom >= 2.3f) 0.55f else 0.42f)
+                        val shell = markerShellColor(zoom, maxZoom)
+                        val borderStroke = if (accent != null) {
+                            BorderStroke(1.5.dp, accent.copy(alpha = 0.92f))
                         } else {
-                            getMarkerColor(marker.type)
+                            BorderStroke(1.dp, MarkerColors.markerRim)
                         }
 
                         Surface(
@@ -359,27 +381,21 @@ fun MapWithMarkers(
                                 .fillMaxSize()
                                 .clip(CircleShape)
                                 .clickable { onMarkerClick(marker) },
-                            color = baseColor,
-                            border = accent?.let { BorderStroke(2.dp, it) },
-                            shadowElevation = if (zoom >= 2.3f) 6.dp else 4.dp
+                            shape = CircleShape,
+                            color = shell,
+                            border = borderStroke,
+                            shadowElevation = markerShadowDp(zoom, maxZoom)
                         ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                if (marker.type == MarkerType.SHOP) {
-                                    Image(
-                                        painter = painterResource(id = R.drawable.shop_icon),
-                                        contentDescription = "Иконка магазина",
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .padding(if (zoom >= 2.3f) 2.dp else 3.dp),
-                                        alpha = 1f,
-                                        contentScale = ContentScale.Fit
-                                    )
-                                } else {
-                                    Text(
-                                        text = getMarkerIcon(marker.type),
-                                        fontSize = if (zoom >= 2.3f) 16.sp else 13.sp
-                                    )
-                                }
+                            Box(
+                                modifier = Modifier.padding(6.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Image(
+                                    painter = painterResource(id = markerIconRes(marker.type)),
+                                    contentDescription = marker.name,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Fit
+                                )
                             }
                         }
                     }
@@ -433,24 +449,55 @@ fun MapWithMarkers(
     }
 }
 
-private fun getMarkerColor(type: MarkerType): Color {
-    return when (type) {
-        MarkerType.BUILDING -> Color(0xFF2196F3)
-        MarkerType.PARK -> Color(0xFF4CAF50)
-        MarkerType.ROAD -> Color(0xFF9E9E9E)
-        MarkerType.UNIVERSITY -> Color(0xFF9C27B0)
-        MarkerType.VENDING -> Color(0xFFFF9800)
-        MarkerType.SHOP -> Color(0xFFF44336)
-    }
+private const val SINGLE_MARKER_LAYOUT_DP = 36f
+
+private fun zoomFraction(zoom: Float, maxZoom: Float): Float =
+    ((zoom - 1f) / (maxZoom - 1f).coerceAtLeast(0.001f)).coerceIn(0f, 1f)
+
+private fun mapPinScreenScale(zoom: Float, maxZoom: Float): Float {
+    val t = zoomFraction(zoom, maxZoom)
+    val wantOnScreen = (1f - 0.22f * t).coerceIn(0.72f, 1f)
+    return wantOnScreen / zoom.coerceAtLeast(0.01f)
 }
 
-private fun getMarkerIcon(type: MarkerType): String {
-    return when (type) {
-        MarkerType.BUILDING -> "🏛️"
-        MarkerType.PARK -> "🌳"
-        MarkerType.ROAD -> "🛣️"
-        MarkerType.UNIVERSITY -> "🎓"
-        MarkerType.VENDING -> "☕"
-        MarkerType.SHOP -> "🛒"
-    }
+private fun clusterBubbleLayoutDp(clusterCount: Int): Float {
+    val n = clusterCount.coerceAtMost(9)
+    return (28 + n * 2).toFloat().coerceIn(26f, 46f)
 }
+
+private fun clusterRadiusForZoom(zoomLevel: Float, maxZoom: Float): Float {
+    val z = zoomLevel.coerceIn(1f, maxZoom.coerceAtLeast(1.001f))
+    val t = zoomFraction(zoomLevel, maxZoom)
+    val base = 54f / z.pow(1.55f)
+    val nearMax = t * t
+    val radius = base * (1f - 0.92f * nearMax) + 0.12f * nearMax
+    return radius.coerceIn(0.12f, 52f)
+}
+
+private object MarkerColors {
+    val clusterFill = Color(0xE62E333D)
+    val clusterRim = Color(0x38FFFFFF)
+    val clusterLabel = Color(0xFFEEF0F3)
+    val shellBase = Color(0xFFF6F7F9)
+    val markerRim = Color(0x22000000)
+}
+
+private fun markerShellColor(zoom: Float, maxZoom: Float): Color {
+    val t = zoomFraction(zoom, maxZoom)
+    return MarkerColors.shellBase.copy(alpha = 0.84f + t * 0.12f)
+}
+
+private fun markerShadowDp(zoom: Float, maxZoom: Float) =
+    (3.2f + zoomFraction(zoom, maxZoom) * 2.4f).dp
+
+private fun markerClusterShadowDp(zoom: Float, maxZoom: Float) =
+    (4f + zoomFraction(zoom, maxZoom) * 2f).dp
+
+private fun clusterCountFontSp(zoom: Float, maxZoom: Float) =
+    (13f - zoomFraction(zoom, maxZoom) * 3f).coerceIn(9.5f, 13f).sp
+
+private fun markerIconRes(type: MarkerType): Int =
+    when (type) {
+        MarkerType.SHOP -> R.drawable.shop_icon
+        else -> R.drawable.sight_icon
+    }

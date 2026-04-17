@@ -10,35 +10,45 @@ import kotlin.math.max
 import kotlin.math.min
 
 interface Grid {
-    fun isWalkable(point: Point) : Boolean
+    fun isWalkable(point: Point): Boolean
 }
 
-class Astar (val grid: MapGrid) {
-    fun calculatePath(start: Point?, end: Point?) : Double {
-        val path = findPath(start, end)
-        var dist = 0.0
-        for (i in 0..path.size - 1) {
-            if (path[i].x * path[i + 1].x != 0 && path[i].y * path[i + 1].y  != 0) {
-                dist += sqrt(2.0);
-            }
-            else dist += 1.0
-        }
+class Astar(val grid: MapGrid) {
 
+    fun calculatePath(start: Point?, end: Point?): Double {
+        val cellPath = findCellPath(start, end)
+        if (cellPath.size < 2) return 0.0
+        val scale = grid.pathScale.coerceAtLeast(1).toDouble()
+        var dist = 0.0
+        for (i in 0 until cellPath.size - 1) {
+            val dx = abs(cellPath[i + 1].x - cellPath[i].x)
+            val dy = abs(cellPath[i + 1].y - cellPath[i].y)
+            dist += if (dx != 0 && dy != 0) scale * sqrt(2.0) else scale * 1.0
+        }
         return dist
     }
 
-    fun findPath(start: Point?, end: Point?) : List<Point> {
+    fun findPath(start: Point?, end: Point?): List<Point> {
+        val cellPath = findCellPath(start, end)
+        if (cellPath.isEmpty()) return emptyList()
+        return cellPath.map { grid.cellToPixelCenter(it) }
+    }
+
+    private fun findCellPath(start: Point?, end: Point?): List<Point> {
         if (start == null || end == null) return emptyList()
-        if (!grid.isWalkable(start) || !grid.isWalkable(end)) return emptyList()
+
+        val startCell = grid.nearestWalkableCellFromPixel(start) ?: return emptyList()
+        val endCell = grid.nearestWalkableCellFromPixel(end) ?: return emptyList()
+
+        if (!grid.isWalkableCell(startCell) || !grid.isWalkableCell(endCell)) return emptyList()
 
         val queue = PriorityQueue<Cell>(compareBy { it.f })
         val visited = mutableSetOf<Point>()
         val nodes = mutableMapOf<Point, Cell>()
 
-        val startCell = Cell(start, 0.0,
-            heuristic(start, end), null, true)
-        queue.add(startCell)
-        nodes[start] = startCell
+        val startCellNode = Cell(startCell, 0.0, heuristic(startCell, endCell), null, true)
+        queue.add(startCellNode)
+        nodes[startCell] = startCellNode
 
         val directions = listOf(
             Point(0, 1),
@@ -51,13 +61,13 @@ class Astar (val grid: MapGrid) {
             Point(-1, -1),
         )
 
-        while(!queue.isEmpty()) {
+        while (!queue.isEmpty()) {
             val current = queue.poll()
             val currentPoint = current.point
 
             if (currentPoint in visited) continue
 
-            if (currentPoint == end) {
+            if (currentPoint == endCell) {
                 return reconstructPath(nodes, currentPoint)
             }
 
@@ -66,14 +76,14 @@ class Astar (val grid: MapGrid) {
             for (dir in directions) {
                 val neighborPoint = Point(currentPoint.x + dir.x, currentPoint.y + dir.y)
 
-                if (neighborPoint in visited) continue;
+                if (neighborPoint in visited) continue
 
-                if (!grid.isWalkable(neighborPoint)) continue;
+                if (!grid.isWalkableCell(neighborPoint)) continue
 
                 if (dir.x != 0 && dir.y != 0) {
                     val first = Point(currentPoint.x, currentPoint.y + dir.y)
                     val second = Point(currentPoint.x + dir.x, currentPoint.y)
-                    if (!grid.isWalkable(first) || !grid.isWalkable(second)) continue
+                    if (!grid.isWalkableCell(first) || !grid.isWalkableCell(second)) continue
                 }
 
                 val newG = current.g + if (dir.x * dir.x == 0) 1.0 else sqrt(2.0)
@@ -82,7 +92,7 @@ class Astar (val grid: MapGrid) {
                 if (newG < neighborNode.g) {
                     neighborNode.parent = currentPoint
                     neighborNode.g = newG
-                    neighborNode.h = heuristic(neighborPoint, end)
+                    neighborNode.h = heuristic(neighborPoint, endCell)
                     neighborNode.f = neighborNode.g + neighborNode.h
 
                     queue.add(neighborNode)
@@ -93,7 +103,7 @@ class Astar (val grid: MapGrid) {
         return emptyList()
     }
 
-    fun reconstructPath (nodes: Map<Point, Cell>, end: Point): List<Point> {
+    fun reconstructPath(nodes: Map<Point, Cell>, end: Point): List<Point> {
         val path = mutableListOf<Point>()
         var current: Point? = end
 
@@ -105,7 +115,7 @@ class Astar (val grid: MapGrid) {
         return path.reversed()
     }
 
-    fun heuristic (a: Point, b: Point): Double {
+    fun heuristic(a: Point, b: Point): Double {
         val dx = abs(a.x - b.x)
         val dy = abs(a.y - b.y)
 
