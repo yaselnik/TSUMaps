@@ -16,11 +16,31 @@ class ClusteringAlgorithm(
     private val grid: MapGrid
 ) {
     private val astar = Astar(grid)
+    private val aStarDistanceMatrix = mutableMapOf<Pair<Point, Point>, Double>()
 
-    private val aStarDistanceCache = mutableMapOf<Pair<Point, Point>, Double>()
+    init {
+        Log.d("Clustering", "Начинаю предрасчет A* расстояний для ${markers.size} маркеров...")
+        for (i in markers.indices) {
+            for (j in i + 1 until markers.size) {
+                val p1 = markers[i].position
+                val p2 = markers[j].position
 
-    private fun cacheKeyForPoints(a: Point, b: Point): Pair<Point, Point> =
-        if (a.x < b.x || (a.x == b.x && a.y <= b.y)) a to b else b to a
+                val walkableP1 = grid.findNearestWalkable(p1, 100)
+                val walkableP2 = grid.findNearestWalkable(p2, 100)
+
+                if (walkableP1 != null && walkableP2 != null) {
+                    val distance = astar.calculatePath(walkableP1, walkableP2)
+                    aStarDistanceMatrix[p1 to p2] = distance
+                    aStarDistanceMatrix[p2 to p1] = distance
+                } else {
+                    aStarDistanceMatrix[p1 to p2] = Double.MAX_VALUE
+                    aStarDistanceMatrix[p2 to p1] = Double.MAX_VALUE
+                    Log.w("Clustering", "Не удалось найти проходимый путь между ${markers[i].name} и ${markers[j].name}")
+                }
+            }
+        }
+        Log.d("Clustering", "Предрасчет A* расстояний завершен.")
+    }
 
     private fun euclideanDistance(p1: Point, p2: Point): Double {
         return sqrt((p1.x - p2.x).toDouble().pow(2) + (p1.y - p2.y).toDouble().pow(2))
@@ -28,22 +48,7 @@ class ClusteringAlgorithm(
 
     private fun getAStarDistance(p1: Point, p2: Point): Double {
         if (p1 == p2) return 0.0
-        val key = cacheKeyForPoints(p1, p2)
-        aStarDistanceCache[key]?.let { return it }
-        val walkableP1 = grid.findNearestWalkable(p1, 100)
-        val walkableP2 = grid.findNearestWalkable(p2, 100)
-        val d = if (walkableP1 != null && walkableP2 != null) {
-            if (walkableP1 == walkableP2) {
-                0.0
-            } else {
-                astar.calculatePath(walkableP1, walkableP2).takeIf { it > 0 } ?: Double.MAX_VALUE
-            }
-        } else {
-            Log.w("Clustering", "Нет проходимой пары для $p1 ↔ $p2")
-            Double.MAX_VALUE
-        }
-        aStarDistanceCache[key] = d
-        return d
+        return aStarDistanceMatrix[p1 to p2] ?: Double.MAX_VALUE
     }
 
     fun performClusteringComparison(k: Int): ClusteringComparisonResult {
@@ -104,31 +109,7 @@ class ClusteringAlgorithm(
             centroids = newCentroids
         }
 
-        ensureAllClustersNonEmpty(assignments, k)
-
         return ClusteringResult(assignments)
-    }
-
-
-    private fun ensureAllClustersNonEmpty(
-        assignments: MutableMap<Int, MutableList<MapMarker>>,
-        k: Int
-    ) {
-        if (markers.size < k) return
-        var guard = 0
-        while (guard++ < k * markers.size) {
-            val emptyIds = (0 until k).filter { assignments[it].isNullOrEmpty() }
-            if (emptyIds.isEmpty()) return
-            for (eid in emptyIds) {
-                val donor = assignments.entries
-                    .filter { it.key != eid && it.value.size >= 2 }
-                    .maxByOrNull { it.value.size }
-                    ?: return
-                val list = donor.value
-                val moved = list.removeAt(list.lastIndex)
-                assignments.getOrPut(eid) { mutableListOf() }.add(moved)
-            }
-        }
     }
 
     private fun findChangedMarkers(
